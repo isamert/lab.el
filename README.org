@@ -1,0 +1,15 @@
+#+TITLE: lab.el (WIP)
+
+/lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted). Main features are
+
+- Listing/filtering all projects belonging to /you/ or a GitLab group
+  - Single/bulk cloning projects
+  - Opening projects in browser with ease
+- Quickly creating merge requests
+- Listing/filtering and acting on merge requests belonging to /you/, a project, a group, a branch in a project etc. Some actions that you can apply on an MR are
+  - Opening them in your browser
+  - Copying the url
+  - Quick rebasing
+- List pipelines
+- Watch pipelines automatically after each push
+- ...
