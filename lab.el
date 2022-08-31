@@ -32,12 +32,20 @@
 (require 'vc-git)
 (require 'request)
 (require 'memoize)
+(require 'embark)
+(require 'alert)
 
-;; TODO
-;; - [ ] lab--notify function
+
+;; Guideline: If function can act on current git project, define it as
+;; a standalone function with an optional parameter (which takes a
+;; project id or something similar) and add it to actions. Otherwise
+;; simply define it in-place on the action definitions.
+
 
 
 ;; Customization:
+
+;; TODO: add :choice' :type info etc.
 
 (defvar lab-token
   nil
@@ -55,7 +63,7 @@
   '()
   "Functions to run after an MR is created.")
 
-(defvar lab-after-mr-mark-ready-functions
+(defvar lab-after-merge-request-mark-ready-functions
   '()
   "Functions to run after an MR is marked ready.")
 
@@ -63,11 +71,29 @@
   #'browse-url
   "Function to open external links.")
 
+(defvar lab-projects-directory
+  (expand-file-name "~")
+  "Default place where local projects are stored.")
+
+;; TODO: choices: 'ssh 'https
+(defvar lab-clone-method
+  'ssh
+  "Prefered for cloning repositories into your local.")
+
+;; TODO: choices: 'completing-read 'read-multiple-choice
+(defvar lab-action-handler
+  'read-multiple-choice
+  "Default action handler. `lab' uses the given function for
+listing possible actions on a selection.")
+
 
 ;;; Internal variables:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
   "Buffer name for showing pretty printed results.")
+
+(defvar lab--action-selection-title "Action: "
+  "The text displayed on action selection menus.")
 
 
 ;;; Elisp helpers:
@@ -112,27 +138,145 @@ given ALIST."
          (vertico-sort-function nil))
      ,@body))
 
+(defun lab--plist-remove-keys-with-prefix (prefix lst)
+  "Return a copy of LST without the key-value pairs whose keys
+starts with PREFIX."
+  (interactive)
+  (seq-each
+   (lambda (it) (setq lst (map-delete lst it)))
+   (seq-filter
+    (lambda (it) (s-prefix? prefix (symbol-name it)))
+    (map-keys lst)))
+  lst)
+
+
+;;; Selection utilities
+;; The discussion made here[1] was quite helpful for implementing the following functionality.
+;; [1]: https://github.com/oantolin/embark/issues/495
+
+(cl-defun lab--completing-read-object (prompt objects &key (formatter #'identity) category predicate require-match initial-input hist def inherit-input-method)
+  "Same as `completing-read' but applies FORMATTER to every object
+and propertizes candidates with the actual object so that they
+can be retrieved later by embark actions. Also adds category
+metadata to each candidate, if given."
+  (let* ((object-table
+          (make-hash-table :test 'equal :size (length objects)))
+         (object-strings
+          (mapcar
+           (lambda (object)
+             (let ((formatted-object (funcall formatter object)))
+               (puthash formatted-object object object-table)
+               (propertize formatted-object 'lab--completing-read-object object)))
+           objects))
+         (selected
+          (completing-read
+           (format "%s: " prompt)
+           (lambda (string predicate action)
+             (if (eq action 'metadata)
+                 (list 'metadata (when category (cons 'category category)))
+               (complete-with-action
+                action object-strings string predicate)))
+           predicate require-match initial-input hist def inherit-input-method)))
+    (gethash selected object-table selected)))
+
+(defun lab--extract-object-from-target (type target)
+  (cons type (or (get-text-property 0 'lab--completing-read-object target) target)))
+
+(cl-defmacro lab--define-actions-for (category &key formatter keymap)
+  (declare (indent 1))
+  (let ((lab--generate-action-name
+         #'(lambda (category name &optional public?)
+             (intern (format "lab%s%s-%s" (if public? "-" "--") category (s-replace " " "-" (downcase name))))))
+        (lab-keymap-full-name (intern (format "lab--embark-keymap-for-%s" category)))
+        (lab-category-full-name (intern (format "lab-%s" category))))
+    `(progn
+       ;; Generate non-interactive action definitions for this
+       ;; category (simple defuns). When user selects an action, one
+       ;; of these functions are dispatched. These are non-interactive
+       ;; because embark does not support passing objects to actions
+       ;; if they are interactive.
+       ,@(mapcar
+          (lambda (keydef)
+            (let ((action (seq-subseq keydef 2))
+                  (name (nth 1 keydef)))
+              (when (listp action)
+                `(defun ,(funcall lab--generate-action-name category name) (it)
+                   (let-alist it
+                     ,@action)))))
+          keymap)
+
+       ;; Define embark keymap and add it to `embark-keymap-alist.'
+       ;; This uses the functions generated above.
+       (embark-define-keymap ,lab-keymap-full-name
+         ,(format "Actions for %s" lab-category-full-name)
+         ,@(mapcar
+            (lambda (keydef)
+              (list
+               (char-to-string (nth 0 keydef))
+               (funcall lab--generate-action-name category (nth 1 keydef))))
+            keymap))
+       (add-to-list
+        'embark-keymap-alist
+        '(,lab-category-full-name . ,lab-keymap-full-name))
+
+       ;; Also define a embark transformer for these actions. That's
+       ;; because we want to pass full objects to the actions instead
+       ;; of passing selected string. Objects are attached to the
+       ;; text-properties by `lab--completing-read-object'
+       ;; function. This extractor simply extracts it.
+       (setf
+        (alist-get ',lab-category-full-name embark-transformer-alist)
+        #'lab--extract-object-from-target)
+
+       ;; Generate the interactive `...-act' function, which is the
+       ;; entry point for the category.
+       (defun ,(funcall lab--generate-action-name category "act-on" t) (items)
+         (let* ((result (lab--completing-read-object
+                         (format "%s: " (s-titleize (format "%s" ',category)))
+                         items
+                         :formatter ,formatter
+                         :category ',lab-category-full-name))
+                (action (pcase lab-action-handler
+                          ('read-multiple-choice
+                           (nth 1 (read-multiple-choice
+                                   lab--action-selection-title
+                                   ',(mapcar
+                                      (lambda (keydef)
+                                        (let ((name (downcase (nth 1 keydef))))
+                                          (list (nth 0 keydef) name)))
+                                      keymap))))
+                          ('completing-read
+                           (completing-read
+                            lab--action-selection-title
+                            ',(mapcar (lambda (keydef) (nth 1 keydef)) keymap)))))
+                (action-fn (,lab--generate-action-name ',category action)))
+           (funcall action-fn result))))))
+
 
 ;;; Git helpers:
 
+;;;###autoload
 (defun lab-git-current-branch ()
   "Return current branch's name."
   (s-trim (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
 
+;;;###autoload
 (defun lab-git-get-config (conf)
   "`git config --get CONF' wrapper."
   (thread-last
     (format "git config --get '%s'" conf)
-    (shell-command-to-string)
-    (s-trim)))
+    shell-command-to-string
+    s-trim))
 
+;;;###autoload
 (defun lab-git-user-name ()
   "Return user name."
   (thread-last
     (lab-git-get-config "user.email")
     (s-split "@")
-    (car)))
+    car))
 
+;;;###autoload
 (defun lab-git-remote-homepage ()
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
     (cond
@@ -157,33 +301,28 @@ given ALIST."
     (read-string "URL: ")
     (read-directory-name "Directory to clone in: " "~/Workspace/")))
   (let* ((default-directory dir)
-         (proc (start-process-shell-command "*lab-clone*" "*lab-clone*" "git clone '%s'")))
+         (proc (start-process-shell-command "*lab-clone*" "*lab-clone*" (format "git clone '%s'" url))))
     (set-process-sentinel
      proc
-     (lambda (p e)
+     (lambda (p _e)
        (if (= 0 (process-exit-status p))
            (message "%s cloned." url)
          (message "Cloning %s is failed." url))))))
 
 ;;;###autoload
 (defun lab-git-origin-switch-to-ssh ()
+  "Switch remote origin address to SSH from HTTPS."
   (interactive)
-  (when-let* ((https-origin (s-trim (shell-command-to-string "git config --get remote.origin.url")))
-              (it (s-match "https://\\(.*\\)\\.\\(com\\|net\\|org\\)/\\(.*\\)" https-origin))
-              (ssh-origin (format "git@%s.%s:%s" (nth 1 it) (nth 2 it) (nth 3 it))))
-    (shell-command-to-string (format "git remote set-url origin %s" ssh-origin))))
+  (if-let* ((https-origin (s-trim (shell-command-to-string "git config --get remote.origin.url")))
+            (it (s-match "https://\\(.*\\)\\.\\(com\\|net\\|org\\)/\\(.*\\)" https-origin))
+            (ssh-origin (format "git@%s.%s:%s" (nth 1 it) (nth 2 it) (nth 3 it))))
+      (progn
+        (shell-command-to-string (format "git remote set-url origin '%s'" ssh-origin))
+        (message "Switched to SSH!"))
+    (user-error "Already using SSH method or something is wrong with the current upstream address!")))
 
 
-;;; GitLab:
-
-(defun lab--plist-remove-keys-with-prefix (prefix lst)
-  (interactive)
-  (seq-each
-   (lambda (it) (setq lst (map-delete lst it)))
-   (seq-filter
-    (lambda (it) (s-prefix? prefix (symbol-name it)))
-    (map-keys lst)))
-  lst)
+;;; Core:
 
 (defun lab--project-path ()
   "Return hexified project path for current git project.
@@ -246,109 +385,58 @@ results in a list and return them."
               (alist-get 'id (lab-last-item json)))))
     (if %collect-all? allitems json)))
 
-(defun lab-list-current-branch-merge-requests ()
-  "List all open MRs that the source branch is the current branch."
-  (interactive)
-  (lab--select-mr-and-apply-action
-   (lab--request
-    "projects/#{project}/merge_requests"
-    :scope 'all
-    :state 'opened
-    :source_branch (lab-git-current-branch))))
+(defun lab--open-web-url (url)
+  (kill-new url)
+  (funcall lab-browse-url-fn url))
 
-(defun lab-list-my-merge-requests ()
-  "List all of my currently open merge requests.
-`mine' means either it's created by me or assigned to me."
-  (interactive)
-  (lab--select-mr-and-apply-action
-   `(,@(lab--request
-        "merge_requests"
-        :scope 'created_by_me
-        :state 'opened)
-     ,@(lab--request
-        "merge_requests"
-        :scope 'assigned_to_me
-        :state 'opened))))
+
+;; Projects:
 
-(defun lab-list-group-merge-requests (&optional group)
-  "List all open MRs that belongs to GROUP.
-If GROUP is omitted, `lab-group' is used."
-  (interactive)
-  (lab--select-mr-and-apply-action
-   (lab--request
-    (format "groups/%s/merge_requests" (or group "#{group}"))
-    :scope 'all
-    :state 'opened)))
+(lab--define-actions-for project
+  :formatter #'lab--format-project-title
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .web_url))
+   (?c "Clone"
+       (lab-git-clone
+        (alist-get (lab--clone-url-path-selector) it)
+        (read-directory-name "Directory to clone in: " lab-projects-directory)))
+   (?m "List merge requests"
+       (lab-list-project-merge-requests .id))
+   (?i "Inspect"
+       (lab--inspect-obj it))))
+
+(defmemoize lab-project-get-all-group-projects (&optional group)
+  (lab--request
+   (format "groups/%s/projects" (or group "#{group}"))
+   :with_shared 'false
+   :include_subgroups 'true
+   :%collect-all? t))
+
+(defun lab-list-all-group-projects (&optional group)
+  "List all group projects and act on them. See `lab-group'."
+  (lab-project-act-on (lab-project-get-all-group-projects group)))
+
+;; TODO: lab-list-all-my-projects
+;; ...
 
 (defun lab-list-project-merge-requests (&optional project)
   "List all open MRs that belongs to PROJECT.
-If it's omitted,currently open project is used."
+If it's omitted, currently open project is used."
   (interactive)
-  (lab--select-mr-and-apply-action
+  (lab-merge-request-act-on
    (lab--request
     (format "projects/%s/merge_requests" (or project "#{project}"))
     :scope 'all)))
 
-(defun lab-create-merge-request (&optional project)
-  "Create an MR interactively for PROJECT."
-  (interactive)
-  (let ((result
-         (lab--request
-          (format "projects/%s/merge_requests" (or project "#{project}"))
-          :%type "POST"
-          :%data (list :source_branch (completing-read
-                                       "Source branch: "
-                                       (vc-git-branches)
-                                       nil nil (lab-git-current-branch))
-                       :target_branch (completing-read
-                                       "Target branch: "
-                                       (vc-git-branches)
-                                       nil nil "master")
-                       :title (read-string "MR Title: "
-                                           (s-trim (shell-command-to-string "git log -1 --pretty=%B")))
-                       ;; TODO Get description (and maybe title) from a dedicated buffer like how magit commit
-                       ;; asks input from a user. I already  implemented something like this,
-                       ;; see `isamert/get-input'
-                       :description (read-string "Description: " (format "Closes %s" (lab-git-current-branch)))
-                       :remove_source_branch t))))
-    (seq-each
-     (lambda (it) (funcall it result))
-     lab-after-mr-create-functions)
-    (lab-open-web-url result)))
+
+;;; Pipelines
 
-(defun lab-open-web-url (it)
-  (let ((url (alist-get 'web_url it)))
-    (kill-new url)
-    (browse-url (alist-get 'web_url it))))
-
-(defun lab-rebase-merge-request (it)
+;; TODO
+(defun lab-list-project-pipelines (&optional project)
+  ""
   (lab--request
-   (format "projects/%s/merge_requests/%s/rebase" (alist-get 'project_id it) (alist-get 'iid it))
-   :%type "PUT"))
-
-(defun lab-mark-mr-as-ready (mr)
-  (let ((result
-         (lab--request
-          (format "projects/%s/merge_requests/%s" (alist-get 'project_id mr) (alist-get 'iid mr))
-          :%type "PUT"
-          :%data (list :title (s-chop-prefixes '("WIP: " "Draft: ") (alist-get 'title mr))))))
-    (seq-each
-     (lambda (it) (funcall it result))
-     lab-after-mr-mark-ready-functions)))
-
-(defmemoize lab-get-all-projects ()
-  (lab--request
-   "groups/#{group}/projects"
-   :with_shared 'false
-   :include_subgroups 'true
-   :per_page 100
-   :%collect-all? t))
-
-;;;###autoload
-(defun lab-select-project ()
-  (interactive)
-  (lab--select-project-and-apply-action
-   (lab-get-all-projects)))
+   (format "projects/%s/pipelines" (or project "#{project}"))))
 
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
@@ -382,9 +470,99 @@ manual action."
             (lab-watch-pipeline url t))))))))
 
 
-;;; GitLab Internal
+;;; Merge Requests
 
-(defun lab--mr-format-title (mr)
+(lab--define-actions-for merge-request
+  :formatter #'lab--format-merge-request-title
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .web_url))
+   (?c "Copy url"
+       (kill-new .web_url))
+   (?m "Mark as ready"
+       (let ((result
+              (lab--request
+               (format "projects/%s/merge_requests/%s" .project_id .iid)
+               :%type "PUT"
+               :%data (list :title (s-chop-prefixes '("WIP: " "Draft: ") .title)))))
+         (seq-each
+          (lambda (it) (funcall it result))
+          lab-after-merge-request-mark-ready-functions)))
+   (?r "Rebase"
+       ;; TODO add a function that rebases merge request with given
+       ;; URL and write this in terms of the new function
+       (lab--request
+        (format "projects/%s/merge_requests/%s/rebase" .project_id .iid)
+        :%type "PUT"))
+   (?i "Inspect"
+       (lab--inspect-obj it))))
+
+(defun lab-list-current-branch-merge-requests ()
+  "List all open MRs that the source branch is the current branch."
+  (interactive)
+  (lab-merge-request-act-on
+   (lab--request
+    "projects/#{project}/merge_requests"
+    :scope 'all
+    :state 'opened
+    :source_branch (lab-git-current-branch))))
+
+(defun lab-list-my-merge-requests ()
+  "List all of my currently open merge requests.
+`mine' means either it's created by me or assigned to me."
+  (interactive)
+  (lab-merge-request-act-on
+   `(,@(lab--request
+        "merge_requests"
+        :scope 'created_by_me
+        :state 'opened)
+     ,@(lab--request
+        "merge_requests"
+        :scope 'assigned_to_me
+        :state 'opened))))
+
+(defun lab-list-group-merge-requests (&optional group)
+  "List all open MRs that belongs to GROUP.
+If GROUP is omitted, `lab-group' is used."
+  (interactive)
+  (lab-merge-request-act-on
+   (lab--request
+    (format "groups/%s/merge_requests" (or group "#{group}"))
+    :scope 'all
+    :state 'opened)))
+
+(defun lab-create-merge-request (&optional project)
+  "Create an MR interactively for PROJECT. If PROJECT is skipped,
+create for currently open git project."
+  (interactive)
+  (let ((result
+         (lab--request
+          (format "projects/%s/merge_requests" (or project "#{project}"))
+          :%type "POST"
+          :%data (list :source_branch (completing-read
+                                       "Source branch: "
+                                       (vc-git-branches)
+                                       nil nil (lab-git-current-branch))
+                       :target_branch (completing-read
+                                       "Target branch: "
+                                       (vc-git-branches)
+                                       nil nil "master")
+                       :title (read-string "MR Title: "
+                                           (s-trim (shell-command-to-string "git log -1 --pretty=%B")))
+                       ;; TODO Get description (and maybe title) from a dedicated buffer like how magit commit
+                       ;; asks input from a user. I already  implemented something like this,
+                       ;; see `isamert/get-input'
+                       :description (read-string "Description: " (format "Closes %s" (lab-git-current-branch)))
+                       :remove_source_branch t))))
+    (seq-each
+     (lambda (it) (funcall it result))
+     lab-after-mr-create-functions)
+    (lab--open-web-url result)))
+
+
+;;; Formatters & other helpers:
+
+(defun lab--format-merge-request-title (mr)
   (format "[%-15s | %-6s => %-15s] %s"
           (propertize
            (thread-last
@@ -403,41 +581,13 @@ manual action."
           (propertize (alist-get 'title mr)
                       'face 'bold)))
 
-(defun lab--select-mr-and-apply-action (mrs)
-  (thread-last
-    mrs
-    (seq-map (lambda (it) (cons (lab--mr-format-title it) it)))
-    (lab-alist-completing-read "Select MR: ")
-    (lab--merge-request-actions)))
+(defun lab--format-project-title (project)
+  (alist-get 'name_with_namespace project))
 
-(defun lab--merge-request-actions (mr)
-  (lab--with-completing-read-exact-order
-   (let ((action (completing-read
-                  "Select an action: "
-                  '("Open page" "Copy url" "Rebase" "Mark as ready" "Raw"))))
-     (pcase action
-       ("Open page" (lab-open-web-url mr))
-       ("Copy url" (kill-new (alist-get 'web_url mr)))
-       ("Mark as ready" (lab-mark-mr-as-ready mr))
-       ("Rebase" (lab-rebase-merge-request mr))
-       ("Raw" (lab--inspect-obj mr))))))
-
-(defun lab--select-project-and-apply-action (projects)
-  (let* ((project-alist (seq-map
-                         (lambda (it) (cons (alist-get 'name_with_namespace it) it))
-                         projects))
-         (selected (lab-alist-completing-read
-                    "Project: "
-                    project-alist))
-         (action (completing-read "Act: " '("Clone" "Open" "List merge requests"))))
-    (let-alist selected
-      (pcase action
-        ("Clone"
-         (lab-git-clone
-          .ssh_url_to_repo
-          (read-directory-name "Dir to clone in: " "~/Workspace/")))
-        ("Open" (funcall lab-browse-url-fn .web_url))
-        ("List merge requests" (lab-list-project-merge-requests .id))))))
+(defun lab--clone-url-path-selector ()
+  (pcase lab-clone-method
+    ('ssh 'ssh_url_to_repo)
+    ('https 'https_url_to_repo)))
 
 (provide 'lab)
 
