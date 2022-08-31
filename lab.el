@@ -42,10 +42,11 @@
 ;; simply define it in-place on the action definitions.
 
 
+;; TODO: add :choice' :type info etc.
+;; TODO: consistent naming: lab-project-list-pipelines etc.
+
 
 ;; Customization:
-
-;; TODO: add :choice' :type info etc.
 
 (defvar lab-token
   nil
@@ -136,6 +137,7 @@ given ALIST."
   "Disable any kind of sorting in completing read."
   `(let ((selectrum-should-sort nil)
          (vertico-sort-function nil))
+     (ignore selectrum-should-sort vertico-sort-function)
      ,@body))
 
 (defun lab--plist-remove-keys-with-prefix (prefix lst)
@@ -340,7 +342,7 @@ project."
 (cl-defun lab--request
     (endpoint
      &rest params
-     &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil)
+     &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil) (%raw? nil)
      &allow-other-keys)
   "Do a GitLab request.
 When %COLLECT-ALL is non-nil, do a paged request and collect all
@@ -364,7 +366,7 @@ results in a list and return them."
                      (s-replace "#{project}" (lab--project-path)))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
-        :parser #'json-read
+        :parser (if %raw? #'buffer-string #'json-read)
         :success (cl-function
                   (lambda (&key data &allow-other-keys)
                     (setq json data)
@@ -406,7 +408,8 @@ results in a list and return them."
    (?i "Inspect"
        (lab--inspect-obj it))))
 
-(defmemoize lab-project-get-all-group-projects (&optional group)
+(defmemoize lab-get-all-group-projects (&optional group)
+  "Get all groups belonging to given group."
   (lab--request
    (format "groups/%s/projects" (or group "#{group}"))
    :with_shared 'false
@@ -414,11 +417,26 @@ results in a list and return them."
    :%collect-all? t))
 
 (defun lab-list-all-group-projects (&optional group)
-  "List all group projects and act on them. See `lab-group'."
-  (lab-project-act-on (lab-project-get-all-group-projects group)))
+  "List all group projects and act on them. See `lab-group'.
+BE CAREFUL, this function tries to fetch all functions belonging
+to given group. Result is memoized after first call for
+`memoize-default-timeout'."
+  (lab-project-act-on (lab-get-all-group-projects group)))
 
-;; TODO: lab-list-all-my-projects
-;; ...
+(defmemoize lab-get-all-owned-projects ()
+  "Get all projects owned by you."
+  (lab--request
+   "projects"
+   :owned 'true
+   :%collect-all? t))
+
+(defun lab-list-all-owned-projects ()
+  "Get all projects owned by you.
+BE CAREFUL, this function tries to fetch all functions belonging
+to given group. Result is memoized after first call for
+`memoize-default-timeout'."
+  (interactive)
+  (lab-project-act-on (lab-get-all-owned-projects)))
 
 (defun lab-list-project-merge-requests (&optional project)
   "List all open MRs that belongs to PROJECT.
@@ -429,14 +447,62 @@ If it's omitted, currently open project is used."
     (format "projects/%s/merge_requests" (or project "#{project}"))
     :scope 'all)))
 
+(defun lab-get-project-pipelines (&optional project)
+  "Get pipelines for PROJECT. If PROJECT is nil, current git
+project is used."
+  (lab--request
+   (format "projects/%s/pipelines" (or project "#{project}"))))
+
+(defun lab-list-project-pipelines (&optional project)
+  "List latest pipelines belonging to PROJECT. If PROJECT is nil,
+current git project is used."
+  (interactive)
+  (lab--with-completing-read-exact-order
+   (lab-pipeline-act-on
+    (lab-get-project-pipelines project))))
+
+
 
 ;;; Pipelines
 
-;; TODO
-(defun lab-list-project-pipelines (&optional project)
-  ""
+(lab--define-actions-for pipeline
+  :formatter #'lab--format-pipeline
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .web_url))
+   (?r "Retry"
+       (lab--request
+        (format "projects/%s/pipelines/%s/retry" .project_id .id)
+        :%type "POST"))
+   (?c "Cancel"
+       (lab--request
+        (format "projects/%s/pipelines/%s/cancel" .project_id .id)
+        :%type "POST"))
+   (?d "Delete"
+       (lab--request
+        (format "projects/%s/pipelines/%s" .project_id .id)
+        :%type "DELETE"))
+   (?w "Watch"
+       (lab-watch-pipeline .web_url))
+   (?l "List jobs"
+       (lab-list-pipeline-jobs .project_id .id))
+   (?i "Inspect"
+       (lab--inspect-obj it))
+   (?I "Inspect detailed"
+       (lab--inspect-obj
+        (lab-get-pipeline .project_id .id)))))
+
+(defun lab-get-pipeline (project-id pipeline-id)
+  "Get detailed information about a single pipeline."
+  (lab--request (format "projects/%s/pipelines/%s" project-id pipeline-id)))
+
+(defun lab-get-pipeline-jobs (project-id pipeline-id)
   (lab--request
-   (format "projects/%s/pipelines" (or project "#{project}"))))
+   (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)))
+
+(defun lab-list-pipeline-jobs (project-id pipeline-id)
+  (lab-job-act-on
+   (lab-get-pipeline-jobs project-id pipeline-id)))
 
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
@@ -470,6 +536,50 @@ manual action."
             (lab-watch-pipeline url t))))))))
 
 
+;;; Jobs
+
+(lab--define-actions-for job
+  :formatter #'lab--format-job
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .web_url))
+   (?r "Retry"
+       (lab--request
+        (format "projects/%s/jobs/%s/retry" .project_id .id)
+        :%type "POST"))
+   (?c "Cancel"
+       (lab--request
+        (format "projects/%s/jobs/%s/cancel" .project_id .id)
+        :%type "POST"))
+   (?d "Delete"
+       (lab--request
+        (format "projects/%s/jobs/%s/erase" .project_id .id)
+        :%type "POST"))
+   (?t "Trace/logs"
+       (with-current-buffer (get-buffer-create (format "*lab-trace:%s-%s*" .id .name))
+         ;; TODO create lab-trace-mode?
+         (prog-mode)
+         (insert
+          (ansi-color-apply
+           (replace-regexp-in-string
+            "" "\n"
+            (lab--request
+             (format "projects/%s/jobs/%s/trace"
+                     (or .project_id (alist-get 'project_id .pipeline))
+                     .id)
+             :%raw? t))))
+         (switch-to-buffer-other-window (current-buffer))))
+   (?i "Inspect"
+       (lab--inspect-obj it))
+   (?I "Inspect detailed"
+       (lab--inspect-obj
+        (lab-get-job .project_id .id)))))
+
+(defun lab-get-job (project-id job-id)
+  "Get detailed information about a single job."
+  (lab--request (format "projects/%s/jobs/%s" project-id job-id)))
+
+
 ;;; Merge Requests
 
 (lab--define-actions-for merge-request
@@ -497,7 +607,7 @@ manual action."
    (?i "Inspect"
        (lab--inspect-obj it))))
 
-(defun lab-list-current-branch-merge-requests ()
+(defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
   (interactive)
   (lab-merge-request-act-on
@@ -583,6 +693,22 @@ create for currently open git project."
 
 (defun lab--format-project-title (project)
   (alist-get 'name_with_namespace project))
+
+(defun lab--format-pipeline (it)
+  (let-alist it
+    (format
+     "%7s | %8s, %6s → %s%s"
+     (upcase .status) .id .source .ref
+     (if .user (format " by %s" (alist-get 'username .user)) ""))))
+
+(defun lab--format-job (it)
+  (let-alist it
+    (format
+     "%7s | %8s, %15s on %s%s"
+     (upcase .status) .id (propertize .name 'face 'bold) .ref
+     (if .user
+         (format " by %s"  (propertize (alist-get 'username .user) 'face 'italic))
+       ""))))
 
 (defun lab--clone-url-path-selector ()
   (pcase lab-clone-method
