@@ -175,7 +175,6 @@ given ALIST."
 
 (defun lab--inspect-obj (obj)
   "Inspect the given elisp OBJ."
-  (interactive)
   (get-buffer-create lab--inspect-buffer-name)
   (let ((print-length nil)
         (print-level nil))
@@ -193,7 +192,6 @@ given ALIST."
 (defun lab--plist-remove-keys-with-prefix (prefix lst)
   "Return a copy of LST without the key-value pairs whose keys
 starts with PREFIX."
-  (interactive)
   (seq-each
    (lambda (it) (setq lst (map-delete lst it)))
    (seq-filter
@@ -513,6 +511,7 @@ results in a list and return them."
 BE CAREFUL, this function tries to fetch all functions belonging
 to given group. Result is memoized after first call for
 `memoize-default-timeout'."
+  (interactive)
   (lab-project-act-on (lab-get-all-group-projects group)))
 
 (defmemoize lab-get-all-owned-projects ()
@@ -554,8 +553,9 @@ project is used."
 current git project is used."
   (interactive)
   (lab--with-completing-read-exact-order
-   (lab-pipeline-act-on
-    (lab-get-project-pipelines project))))
+   (lab--sort-by-latest-updated
+    (lab-pipeline-act-on
+     (lab-get-project-pipelines project)))))
 
 
 
@@ -580,7 +580,7 @@ current git project is used."
         :%type "DELETE"))
    (?w "Watch"
        (lab-watch-pipeline .web_url))
-   (?l "List jobs"
+   (?j "List jobs"
        (lab-list-pipeline-jobs .project_id .id))
    (?i "Inspect"
        (lab--inspect-obj it))
@@ -600,8 +600,9 @@ current git project is used."
 
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
-  (lab-job-act-on
-   (lab-get-pipeline-jobs project-id pipeline-id)))
+  (lab--with-completing-read-exact-order
+   (lab-job-act-on
+    (lab-get-pipeline-jobs project-id pipeline-id))))
 
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
@@ -716,42 +717,62 @@ manual action."
        (lab--request
         (format "projects/%s/merge_requests/%s/rebase" .project_id .iid)
         :%type "PUT"))
+   (?p "Pipelines"
+       (lab--with-completing-read-exact-order
+        (lab-pipeline-act-on
+         (lab--sort-by-latest-updated
+          (lab--request
+           (format "projects/%s/merge_requests/%s/pipelines" .project_id .iid)
+           :scope 'all
+           :state 'opened)))))
    (?i "Inspect"
        (lab--inspect-obj it))))
 
 (defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
   (interactive)
-  (lab-merge-request-act-on
-   (lab--request
-    "projects/#{project}/merge_requests"
-    :scope 'all
-    :state 'opened
-    :source_branch (lab-git-current-branch))))
+  (lab--with-completing-read-exact-order
+   (lab-merge-request-act-on
+    (lab--sort-by-latest-updated
+     (lab--request
+      "projects/#{project}/merge_requests"
+      :scope 'all
+      :state 'opened
+      :source_branch (lab-git-current-branch))))))
 
 (defun lab-list-my-merge-requests ()
-  "List all of my currently open merge requests.
-`mine' means either it's created by me or assigned to me."
+  "List all of your currently open merge requests.
+`Your' means either it's created by you or assigned to you."
   (interactive)
-  (lab-merge-request-act-on
-   `(,@(lab--request
-        "merge_requests"
-        :scope 'created_by_me
-        :state 'opened)
-     ,@(lab--request
-        "merge_requests"
-        :scope 'assigned_to_me
-        :state 'opened))))
+  (lab--with-completing-read-exact-order
+   (lab-merge-request-act-on
+    (lab--sort-by-latest-updated
+     `(,@(lab--request
+          "merge_requests"
+          :scope 'created_by_me
+          :state 'opened)
+       ,@(lab--request
+          "merge_requests"
+          :scope 'assigned_to_me
+          :state 'opened))))))
 
 (defun lab-list-group-merge-requests (&optional group)
   "List all open MRs that belongs to GROUP.
 If GROUP is omitted, `lab-group' is used."
   (interactive)
-  (lab-merge-request-act-on
-   (lab--request
-    (format "groups/%s/merge_requests" (or group "#{group}"))
-    :scope 'all
-    :state 'opened)))
+  (lab--with-completing-read-exact-order
+   (lab-merge-request-act-on
+    (lab--sort-by-latest-updated
+     (lab--request
+      (format "groups/%s/merge_requests" (or group "#{group}"))
+      :scope 'all
+      :state 'opened)))))
+
+(defun lab-list-merge-request-pipelines (&optional group)
+  "List all open MRs that belongs to GROUP.
+If GROUP is omitted, `lab-group' is used."
+  (interactive)
+  )
 
 (defun lab-create-merge-request (&optional project)
   "Create an MR interactively for current git project."
@@ -844,8 +865,9 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--format-pipeline (it)
   (let-alist it
     (format
-     "%7s | %8s, %6s → %s%s"
+     "%7s | %8s, %6s → %s (%s)%s"
      (upcase .status) .id .source .ref
+     (lab--time-ago (date-to-time .updated_at))
      (if .user (format " by %s" (alist-get 'username .user)) ""))))
 
 (defun lab--format-job (it)
@@ -862,6 +884,11 @@ If GROUP is omitted, `lab-group' is used."
     ('ssh 'ssh_url_to_repo)
     ('https 'https_url_to_repo)))
 
+(defun lab--sort-by-latest-updated (lst)
+  (seq-sort
+   (lambda (o1 o2) (string> (alist-get 'updated_at o1) (alist-get 'updated_at o2)))
+   lst))
+
 (defun lab--serialize-yaml-value (val)
   (pcase val
     ((or 't "t" "true" "yes") "true")
@@ -873,6 +900,23 @@ If GROUP is omitted, `lab-group' is used."
     ((or 't "t" "true" "yes") t)
     ((or "false" "no" ":json-false") :json-false)
     (_ val)))
+
+(defun lab--time-ago (past)
+  (let* ((intervals '((31536000 . "year")
+                      (2592000 . "month")
+                      (86400 . "day")
+                      (3600 . "hour")
+                      (60 . "minute")
+                      (1 . "second")
+                      (0 . "now")))
+         (secs (floor (-
+                       (string-to-number (format-time-string "%s"))
+                       (string-to-number (format-time-string "%s" past)))))
+         (int (seq-find (lambda (it) (< (car it) secs)) intervals))
+         (count (floor (/ secs (car int)))))
+    (format
+     "%s %s%s ago"
+     count (cdr int) (if (> count 1) "s" ""))))
 
 
 (provide 'lab)
