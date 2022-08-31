@@ -34,58 +34,82 @@
 (require 'memoize)
 (require 'embark)
 (require 'alert)
-
-
-;; Guideline: If function can act on current git project, define it as
-;; a standalone function with an optional parameter (which takes a
-;; project id or something similar) and add it to actions. Otherwise
-;; simply define it in-place on the action definitions.
-
-
-;; TODO: add :choice' :type info etc.
-;; TODO: consistent naming: lab-project-list-pipelines etc.
+(require 'ansi-color)
 
 
 ;; Customization:
 
-(defvar lab-token
+(defcustom lab-token
   nil
-  "GitLab token.")
+  "GitLab API token."
+  :type 'string
+  :group 'lab)
 
-(defvar lab-host
+(defcustom lab-host
   nil
-  "GitLab host.")
+  "GitLab host, like `https://gitlab.mycompany.com'."
+  :type 'string
+  :group 'lab)
 
-(defvar lab-group
+(defcustom lab-group
   nil
-  "GitLab group.")
+  "The GitLab group you mostly work on. Required only for functions
+containing `-group-' phrase."
+  :type 'string
+  :group 'lab)
 
-(defvar lab-after-mr-create-functions
+(defcustom lab-after-mr-create-functions
   '()
-  "Functions to run after an MR is created.")
+  "Functions to run after an MR is created."
+  :type 'hook
+  :group 'lab)
 
-(defvar lab-after-merge-request-mark-ready-functions
+(defcustom lab-after-merge-request-mark-ready-functions
   '()
-  "Functions to run after an MR is marked ready.")
+  "Functions to run after an MR is marked ready."
+  :type 'hook
+  :group 'lab)
 
-(defvar lab-browse-url-fn
+(defcustom lab-browse-url-fn
   #'browse-url
-  "Function to open external links.")
+  "Function to open external links."
+  :type 'function
+  :group 'lab)
 
-(defvar lab-projects-directory
+(defcustom lab-projects-directory
   (expand-file-name "~")
-  "Default place where local projects are stored.")
+  "Default place where local projects are stored."
+  :type 'directory
+  :group 'lab)
 
-;; TODO: choices: 'ssh 'https
-(defvar lab-clone-method
+(defcustom lab-result-count
+  20
+  "Total result count for `lab-list-X' functions. Can't be higher
+than `lab--max-per-page-result-count'."
+  :type 'integer
+  :group 'lab)
+
+(defcustom lab-should-open-pipeline-on-manual-action?
+  nil
+  "Should pipeline web page automatically be opened if it requires
+a manual action?"
+  :type 'boolean
+  :group 'lab)
+
+(defcustom lab-clone-method
   'ssh
-  "Prefered for cloning repositories into your local.")
+  "Prefered for cloning repositories into your local."
+  :type '(choice (const :tag "SSH" ssh)
+                 (const :tag "HTTPS" https))
+  :group 'lab)
 
-;; TODO: choices: 'completing-read 'read-multiple-choice
-(defvar lab-action-handler
+(defcustom lab-action-handler
   'read-multiple-choice
   "Default action handler. `lab' uses the given function for
-listing possible actions on a selection.")
+listing possible actions on a selection."
+  :type '(choice (const :tag "completing-read" completing-read)
+                 (const :tag "read-multiple-choice" read-multiple-choice))
+  :group 'lab)
 
 
 ;;; Internal variables:
@@ -95,6 +119,9 @@ listing possible actions on a selection.")
 
 (defvar lab--action-selection-title "Action: "
   "The text displayed on action selection menus.")
+
+(defconst lab--max-per-page-result-count
+  100)
 
 
 ;;; Elisp helpers:
@@ -263,6 +290,10 @@ metadata to each candidate, if given."
   (s-trim (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
 
 ;;;###autoload
+(defun lab-git-last-commit-sha ()
+  (s-trim (shell-command-to-string "git rev-parse HEAD")))
+
+;;;###autoload
 (defun lab-git-get-config (conf)
   "`git config --get CONF' wrapper."
   (thread-last
@@ -353,9 +384,8 @@ results in a list and return them."
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
 
   (let (json
-        (allitems '())
+        (all-items '())
         (lastid t)
-        (per-page 100)
         (json-object-type 'alist)
         (json-array-type #'list)
         (json-key-type 'symbol))
@@ -371,21 +401,23 @@ results in a list and return them."
                   (lambda (&key data &allow-other-keys)
                     (setq json data)
                     (when %collect-all?
-                      (setq allitems `(,@allitems ,@json)))))
+                      (setq all-items `(,@all-items ,@json)))))
         :sync t
         :data (lab--plist-to-alist %data)
         :params `(,@(when %collect-all?
-                      `(("per_page" . ,per-page)
+                      `(("per_page" . ,lab--max-per-page-result-count)
                         ("order_by" . "id")
                         ("sort" . "asc")
                         ("pagination" . "keyset")))
                   ,@(when (and %collect-all? (not (eq lastid t)))
                       `(("id_after" . ,lastid)))
+                  ,@(unless %collect-all?
+                      `(("per_page" . ,lab-result-count)))
                   ,@(lab--plist-to-alist params)))
       (setq lastid
-            (when (and %collect-all? (length= json per-page))
+            (when (and %collect-all? (length= json lab--max-per-page-result-count))
               (alist-get 'id (lab-last-item json)))))
-    (if %collect-all? allitems json)))
+    (if %collect-all? all-items json)))
 
 (defun lab--open-web-url (url)
   (kill-new url)
@@ -416,6 +448,7 @@ results in a list and return them."
    :include_subgroups 'true
    :%collect-all? t))
 
+;;;###autoload
 (defun lab-list-all-group-projects (&optional group)
   "List all group projects and act on them. See `lab-group'.
 BE CAREFUL, this function tries to fetch all functions belonging
@@ -430,6 +463,7 @@ to given group. Result is memoized after first call for
    :owned 'true
    :%collect-all? t))
 
+;;;###autoload
 (defun lab-list-all-owned-projects ()
   "Get all projects owned by you.
 BE CAREFUL, this function tries to fetch all functions belonging
@@ -438,6 +472,7 @@ to given group. Result is memoized after first call for
   (interactive)
   (lab-project-act-on (lab-get-all-owned-projects)))
 
+;;;###autoload
 (defun lab-list-project-merge-requests (&optional project)
   "List all open MRs that belongs to PROJECT.
 If it's omitted, currently open project is used."
@@ -447,12 +482,14 @@ If it's omitted, currently open project is used."
     (format "projects/%s/merge_requests" (or project "#{project}"))
     :scope 'all)))
 
+;;;###autoload
 (defun lab-get-project-pipelines (&optional project)
   "Get pipelines for PROJECT. If PROJECT is nil, current git
 project is used."
   (lab--request
    (format "projects/%s/pipelines" (or project "#{project}"))))
 
+;;;###autoload
 (defun lab-list-project-pipelines (&optional project)
   "List latest pipelines belonging to PROJECT. If PROJECT is nil,
 current git project is used."
@@ -492,14 +529,17 @@ current git project is used."
        (lab--inspect-obj
         (lab-get-pipeline .project_id .id)))))
 
+;;;###autoload
 (defun lab-get-pipeline (project-id pipeline-id)
   "Get detailed information about a single pipeline."
   (lab--request (format "projects/%s/pipelines/%s" project-id pipeline-id)))
 
+;;;###autoload
 (defun lab-get-pipeline-jobs (project-id pipeline-id)
   (lab--request
    (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)))
 
+;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
   (lab-job-act-on
    (lab-get-pipeline-jobs project-id pipeline-id)))
@@ -531,9 +571,22 @@ manual action."
            ((or "canceled" "skipped" "scheduled")
             (alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
            ("manual"
-            (alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline)))
+            (alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
+            (when lab-should-open-pipeline-on-manual-action?
+              (browse-url .web_url)))
            (_
             (lab-watch-pipeline url t))))))))
+
+(defun lab-watch-pipeline-for-last-commit ()
+  "Start watching the pipeline created by your last commit."
+  (interactive)
+  (if-let* ((sha (lab-git-last-commit-sha))
+            (lab-result-count 3)
+            (pipeline (seq-find
+                       (lambda (it) (equal sha (alist-get 'sha it)))
+                       (lab-get-project-pipelines))))
+      (lab-watch-pipeline (alist-get 'web_url pipeline))
+    (user-error "Seems like there are no pipelines created for your last commit")))
 
 
 ;;; Jobs
