@@ -58,7 +58,7 @@ containing `-group-' phrase."
   :type 'string
   :group 'lab)
 
-(defcustom lab-after-mr-create-functions
+(defcustom lab-after-merge-requests-create-functions
   '()
   "Functions to run after an MR is created."
   :type 'hook
@@ -111,8 +111,27 @@ listing possible actions on a selection."
                  (const :tag "read-multiple-choice" read-multiple-choice))
   :group 'lab)
 
+(defcustom lab-main-branch-name
+  "main"
+  "Default main branch name used in your projects, like \"main\", \"master\" etc."
+  :type 'string
+  :group 'lab)
+
+(defcustom lab-default-merge-request-create-options
+  (list
+   ;; Premium feature:
+   ;; :approvals_before_merge t
+   ;; My broke-ass yaml parser does not support arrays right now, so:
+   ;; :labels '()
+   :squash :json-false
+   :allow_collaboration t
+   :remove_source_branch t)
+  "Default options used while creating a merge request."
+  :group 'lab
+  :type 'sexp)
+
 
-;;; Internal variables:
+;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
   "Buffer name for showing pretty printed results.")
@@ -122,6 +141,10 @@ listing possible actions on a selection."
 
 (defconst lab--max-per-page-result-count
   100)
+
+(defconst lab--regex-yaml-metadata-border
+  "\\(-\\{3\\}\\)$"
+  "Regular expression for matching YAML metadata.")
 
 
 ;;; Elisp helpers:
@@ -207,6 +230,42 @@ metadata to each candidate, if given."
                 action object-strings string predicate)))
            predicate require-match initial-input hist def inherit-input-method)))
     (gethash selected object-table selected)))
+
+(cl-defun lab--user-input
+    (&key
+     (mode #'fundemental-mode)
+     (init "")
+     (buffer-name "*lab-input*")
+     on-start
+     on-accept
+     on-reject
+     parser)
+  "Display a buffer to user to enter some input."
+  (let* ((buffer (get-buffer-create buffer-name))
+         (success-handler (lambda ()
+                            (interactive)
+                            (let ((parser-result (when parser
+                                                   (with-current-buffer buffer
+                                                     (funcall parser))))
+                                  (result (substring-no-properties (buffer-string))))
+                              (kill-buffer buffer)
+                              (if parser
+                                  (funcall on-accept result parser-result)
+                                (funcall on-accept result)))))
+         (reject-handler (lambda ()
+                           (interactive)
+                           (kill-buffer buffer)
+                           (when on-reject
+                             (funcall on-reject)))))
+    (with-current-buffer buffer
+      (funcall mode)
+      (use-local-map (copy-keymap (current-local-map)))
+      (local-set-key (kbd "C-c C-c") success-handler)
+      (local-set-key (kbd "C-c C-k") reject-handler)
+      (setq header-line-format "Hit `C-c C-c' to save `C-c C-k' to reject.")
+      (insert init)
+      (funcall on-start)
+      (switch-to-buffer-other-window buffer))))
 
 (defun lab--extract-object-from-target (type target)
   (cons type (or (get-text-property 0 'lab--completing-read-object target) target)))
@@ -695,32 +754,67 @@ If GROUP is omitted, `lab-group' is used."
     :state 'opened)))
 
 (defun lab-create-merge-request (&optional project)
-  "Create an MR interactively for PROJECT. If PROJECT is skipped,
-create for currently open git project."
+  "Create an MR interactively for current git project."
   (interactive)
-  (let ((result
-         (lab--request
-          (format "projects/%s/merge_requests" (or project "#{project}"))
-          :%type "POST"
-          :%data (list :source_branch (completing-read
-                                       "Source branch: "
-                                       (vc-git-branches)
-                                       nil nil (lab-git-current-branch))
-                       :target_branch (completing-read
-                                       "Target branch: "
-                                       (vc-git-branches)
-                                       nil nil "master")
-                       :title (read-string "MR Title: "
-                                           (s-trim (shell-command-to-string "git log -1 --pretty=%B")))
-                       ;; TODO Get description (and maybe title) from a dedicated buffer like how magit commit
-                       ;; asks input from a user. I already  implemented something like this,
-                       ;; see `isamert/get-input'
-                       :description (read-string "Description: " (format "Closes %s" (lab-git-current-branch)))
-                       :remove_source_branch t))))
-    (seq-each
-     (lambda (it) (funcall it result))
-     lab-after-mr-create-functions)
-    (lab--open-web-url result)))
+  (let ((source-branch (completing-read
+                        "Source branch: "
+                        (vc-git-branches)
+                        nil nil (lab-git-current-branch)))
+        (target-branch (completing-read
+                        "Target branch: "
+                        (vc-git-branches)
+                        nil nil lab-main-branch-name))
+        (title (read-string "MR Title: "
+                            (s-trim (shell-command-to-string "git log -1 --pretty=%B")))))
+    (lab--user-input
+     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :init (thread-last
+             (append
+              lab-default-merge-request-create-options
+              (list :source_branch source-branch
+                    :target_branch target-branch
+                    :title title))
+             (map-apply
+              (lambda (key val)
+                (format "%s: %s" (substring (symbol-name key) 1) (lab--serialize-yaml-value val))))
+             (nreverse)
+             (s-join "\n")
+             (s-prepend "---\n")
+             (s-append "\n---\n\n"))
+     :parser #'lab--parse-merge-request-buffer
+     :on-start
+     (lambda () (when (require 'magit nil t)
+             (magit-diff-range (format "%s..%s" target-branch source-branch))))
+     :on-accept
+     (lambda (_ data)
+       (let ((result
+              (lab--request
+               (format "projects/%s/merge_requests" (or project "#{project}"))
+               :%type "POST"
+               :%data data)))
+         (seq-each
+          (lambda (it) (funcall it result))
+          lab-after-merge-requests-create-functions)
+         (lab--open-web-url result))))))
+
+(defun lab--parse-merge-request-buffer ()
+  (goto-char (point-min))
+  (let* ((yaml (when (search-forward-regexp lab--regex-yaml-metadata-border nil t)
+                 (buffer-substring-no-properties
+                  (point)
+                  (search-forward-regexp lab--regex-yaml-metadata-border nil t))))
+         (yaml-data (when yaml
+                      (thread-last
+                        yaml
+                        (s-split "\n")
+                        (mapcar (lambda (it) (mapcar #'s-trim (s-split-up-to ": " it 1))))
+                        (seq-filter (lambda (it) (and (length= it 2)
+                                                 (not (s-blank? (car it))))))
+                        (mapcar (lambda (it) (list (intern (concat ":" (car it)))
+                                              (lab--deserialize-yaml-value (cadr it)))))
+                        (apply #'seq-concatenate 'list)))))
+    (map-insert yaml-data
+                :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
 
 
 ;;; Formatters & other helpers:
@@ -767,6 +861,19 @@ create for currently open git project."
   (pcase lab-clone-method
     ('ssh 'ssh_url_to_repo)
     ('https 'https_url_to_repo)))
+
+(defun lab--serialize-yaml-value (val)
+  (pcase val
+    ((or 't "t" "true" "yes") "true")
+    ((or "false" "no" :json-false) "false")
+    (_ val)))
+
+(defun lab--deserialize-yaml-value (val)
+  (pcase val
+    ((or 't "t" "true" "yes") t)
+    ((or "false" "no" ":json-false") :json-false)
+    (_ val)))
+
 
 (provide 'lab)
 
