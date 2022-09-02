@@ -314,8 +314,8 @@ metadata to each candidate, if given."
         (alist-get ',lab-category-full-name embark-transformer-alist)
         #'lab--extract-object-from-target)
 
-       ;; Generate the interactive `...-act' function, which is the
-       ;; entry point for the category.
+       ;; Generate the `...-act' function which let's user select one
+       ;; of the inputs and act on them
        (defun ,(funcall lab--generate-action-name category "act-on" t) (items)
          (let* ((result (lab--completing-read-object
                          (format "%s: " (s-titleize (format "%s" ',category)))
