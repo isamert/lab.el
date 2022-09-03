@@ -23,7 +23,7 @@
 
 ;;; Commentary:
 
-;; An Emacs interface for MPV
+;; Simple integration with GitLab.
 
 ;;; Code:
 
