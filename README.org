@@ -1,6 +1,42 @@
-#+TITLE: lab.el (WIP)
+#+TITLE: lab.el
 
-/lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted). Here is a quick summary of things that you can do with /lab.el/:
+/lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted).
+
+* Basics
+
+~lab.el~ is designed to make your /daily/ interactions with GitLab easier. Want to quickly list latest merge requests for a project? You got covered! Want to create a merge request for the project you are currently working on, totally inside Emacs? You got covered! Want every function on GitLab API exposed as an elisp function? You are on your own. See /Functionality summary/ down below for a quick rundown of what ~lab.el~ is capable of.
+
+Workflow is generally ~completing-read~ based. You list and select an item (a project/merge request/pipeline/job) and then you trigger one of the listed actions that can be acted upon selected item. There are also other special interactive functions, like ~lab-create-merge-request~. Also some functions work directly on current project you are working on (provided by ~project.el~).
+
+/lab.el/ also supports [[https://github.com/oantolin/embark][embark]], you can use ~(embark-act)~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions as the primary feature of embark, /listing actions of a target/, is already covered by /lab.el/.
+
+I extracted this package from my ~init.el~ as the feature set grew to a point that is too much to keep it in there. This may explain why some of the functionality that you expect a GitLab client would have is missing. It's because I probably don't use that feature.
+
+* Installation
+
+Just download =lab.el= file and put it into your =load-path=, afterwards you can simply do the following in your =init.el=:
+
+#+begin_src elisp
+  (require 'lab)
+#+end_src
+
+You can also use =use-package=
+
+#+begin_src elisp
+  ;; with straight:
+  (use-package lab
+    :ensure t
+    :straight (:host github :repo "isamert/lab.el"))
+
+  ;; with quelpa:
+  (use-package lab
+    :ensure t
+    :quelpa (empv :fetcher github :repo "isamert/lab.el"))
+#+end_src
+
+* Functionality summary
+
+Here is a quick rundown of features ~lab.el~ provides:
 
 - Projects ::
   - List projects belonging to you or a group.
@@ -33,38 +69,6 @@
     - Trigger retries, cancellation or deletion.
     - Show logs of a job on a nicely formatted buffer.
     - Show detailed information about given job.
-
-* Basics
-
-~lab.el~ is designed to make your /daily/ interactions with GitLab easier. Want to quickly list latest merge requests for a project? You got covered! Want to create a merge request for the project you are currently working on, totally inside Emacs? You got covered! Want every function on GitLab API exposed as an elisp function? You are on your own.
-
-Workflow is generally ~completing-read~ based. You list and select an item (a project/merge request/pipeline/job) and then you trigger one of the listed actions that can be acted upon selected item. There are also other special interactive functions, like ~lab-create-merge-request~. Also some functions work directly on current project you are working on (provided by ~project.el~).
-
-/lab.el/ also supports ~embark~, you can use ~embark-act~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions as the primary feature of embark, listing actions of a target, is already covered by /lab.el/.
-
-I extracted this package from my ~init.el~ as the feature set grew to a point that is too much to keep in my ~init.el~. This may explain why some of the functionality that you expect a GitLab client would have is missing. It's because I probably don't use that feature.
-
-* Installation
-
-Just download =lab.el= file and put it into your =load-path=, afterwards you can simply do the following in your =init.el=:
-
-#+begin_src elisp
-  (require 'lab)
-#+end_src
-
-You can also use =use-package=
-
-#+begin_src elisp
-  ;; with straight:
-  (use-package lab
-    :ensure t
-    :straight (:host github :repo "isamert/lab.el"))
-
-  ;; with quelpa:
-  (use-package lab
-    :ensure t
-    :quelpa (empv :fetcher github :repo "isamert/lab.el"))
-#+end_src
 
 * Usage
 
