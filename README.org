@@ -75,7 +75,12 @@ Here is a quick rundown of features ~lab.el~ provides:
 Set the following variables and you are good to go:
 
 #+begin_src elisp
+  ;; Required.
   (setq lab-host "https://gitlab.mycompany.com")
+
+  ;; Required.
+  ;; See the following link to learn how you can gather one for yourself:
+  ;; https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token
   (setq lab-token "YOUR-PRIVATE-GITLAB-API-TOKEN")
 
   ;; Optional, but useful. See the variable documentation
@@ -91,7 +96,7 @@ You can use the provided ~lab--request~ function write your on [[https://docs.gi
 #+begin_src elisp
   ;; Get *all* pipelines currently running on master.
   (lab--request
-   (format "projects/#{project}/pipelines")
+   "projects/#{project}/pipelines"
    :scope "running"
    :ref "master"
    :%collect-all t)
