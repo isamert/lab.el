@@ -38,7 +38,7 @@
 
 ~lab.el~ is designed to make your /daily/ interactions with GitLab easier. Want to quickly list latest merge requests for a project? You got covered! Want to create a merge request for the project you are currently working on, totally inside Emacs? You got covered! Want every function on GitLab API exposed as an elisp function? You are on your own.
 
-Workflow is generally ~completing-read~ based. You list and select an item (a project/merge request/pipeline/job) and then you trigger one of the listed actions belonging to the item. There are also other special interactive functions, like ~lab-create-merge-request~. Also some functions work directly on current project you are working on (provided by ~project.el~).
+Workflow is generally ~completing-read~ based. You list and select an item (a project/merge request/pipeline/job) and then you trigger one of the listed actions that can be acted upon selected item. There are also other special interactive functions, like ~lab-create-merge-request~. Also some functions work directly on current project you are working on (provided by ~project.el~).
 
 /lab.el/ also supports ~embark~, you can use ~embark-act~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions as the primary feature of embark, listing actions of a target, is already covered by /lab.el/.
 
@@ -80,7 +80,7 @@ Set the following variables and you are good to go:
 
 See ~M-x customize-group lab~ for all customization options.
 
-* Using it as a GitLab API client
+* Using as a GitLab API client
 
 You can use the provided ~lab--request~ function write your on [[https://docs.gitlab.com/ee/api/api_resources.html][GitLab API]] wrappers:
 

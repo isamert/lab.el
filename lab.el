@@ -768,12 +768,6 @@ If GROUP is omitted, `lab-group' is used."
       :scope 'all
       :state 'opened)))))
 
-(defun lab-list-merge-request-pipelines (&optional group)
-  "List all open MRs that belongs to GROUP.
-If GROUP is omitted, `lab-group' is used."
-  (interactive)
-  )
-
 (defun lab-create-merge-request (&optional project)
   "Create an MR interactively for current git project."
   (interactive)
