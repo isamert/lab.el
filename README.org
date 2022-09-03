@@ -34,6 +34,25 @@ You can also use =use-package=
     :quelpa (empv :fetcher github :repo "isamert/lab.el"))
 #+end_src
 
+* Usage
+
+Set the following variables and you are good to go:
+
+#+begin_src elisp
+  ;; Required.
+  (setq lab-host "https://gitlab.mycompany.com")
+
+  ;; Required.
+  ;; See the following link to learn how you can gather one for yourself:
+  ;; https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token
+  (setq lab-token "YOUR-PRIVATE-GITLAB-API-TOKEN")
+
+  ;; Optional, but useful. See the variable documentation
+  (setq lab-group "YOUR-GROUP-ID")
+#+end_src
+
+See ~M-x customize-group lab~ for all customization options.
+
 * Functionality summary
 
 Here is a quick rundown of features ~lab.el~ provides:
@@ -69,25 +88,6 @@ Here is a quick rundown of features ~lab.el~ provides:
     - Trigger retries, cancellation or deletion.
     - Show logs of a job on a nicely formatted buffer.
     - Show detailed information about given job.
-
-* Usage
-
-Set the following variables and you are good to go:
-
-#+begin_src elisp
-  ;; Required.
-  (setq lab-host "https://gitlab.mycompany.com")
-
-  ;; Required.
-  ;; See the following link to learn how you can gather one for yourself:
-  ;; https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token
-  (setq lab-token "YOUR-PRIVATE-GITLAB-API-TOKEN")
-
-  ;; Optional, but useful. See the variable documentation
-  (setq lab-group "YOUR-GROUP-ID")
-#+end_src
-
-See ~M-x customize-group lab~ for all customization options.
 
 * Using as a GitLab API client
 
