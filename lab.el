@@ -123,7 +123,7 @@ listing possible actions on a selection."
    ;; :approvals_before_merge t
    ;; My broke-ass yaml parser does not support arrays right now, so:
    ;; :labels '()
-   :squash :json-false
+   :squash nil
    :allow_collaboration t
    :remove_source_branch t)
   "Default options used while creating a merge request."
@@ -459,6 +459,9 @@ results in a list and return them."
                     (setq json data)
                     (when %collect-all?
                       (setq all-items `(,@all-items ,@json)))))
+        :error (cl-function
+                (lambda (&key data &allow-other-keys)
+                  (error "lab--request failed with %s" data)))
         :sync t
         :data (lab--plist-to-alist %data)
         :params `(,@(when %collect-all?
@@ -556,7 +559,6 @@ current git project is used."
    (lab--sort-by-latest-updated
     (lab-pipeline-act-on
      (lab-get-project-pipelines project)))))
-
 
 
 ;;; Pipelines
@@ -771,7 +773,8 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab-create-merge-request (&optional project)
   "Create an MR interactively for current git project."
   (interactive)
-  (let ((source-branch (completing-read
+  (let ((currbuf (current-buffer))
+        (source-branch (completing-read
                         "Source branch: "
                         (vc-git-branches)
                         nil nil (lab-git-current-branch)))
@@ -802,15 +805,16 @@ If GROUP is omitted, `lab-group' is used."
              (magit-diff-range (format "%s..%s" target-branch source-branch))))
      :on-accept
      (lambda (_ data)
-       (let ((result
-              (lab--request
-               (format "projects/%s/merge_requests" (or project "#{project}"))
-               :%type "POST"
-               :%data data)))
-         (seq-each
-          (lambda (it) (funcall it result))
-          lab-after-merge-requests-create-functions)
-         (lab--open-web-url result))))))
+       (with-current-buffer currbuf
+         (let ((result
+                (lab--request
+                 (format "projects/%s/merge_requests" (or project "#{project}"))
+                 :%type "POST"
+                 :%data data)))
+           (seq-each
+            (lambda (it) (funcall it result))
+            lab-after-merge-requests-create-functions)
+           (lab--open-web-url (alist-get 'web_url result))))))))
 
 (defun lab--parse-merge-request-buffer ()
   (goto-char (point-min))
@@ -886,13 +890,13 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--serialize-yaml-value (val)
   (pcase val
     ((or 't "t" "true" "yes") "true")
-    ((or "false" "no" :json-false) "false")
+    ((or "false" "no" :json-false 'nil) "false")
     (_ val)))
 
 (defun lab--deserialize-yaml-value (val)
   (pcase val
     ((or 't "t" "true" "yes") t)
-    ((or "false" "no" ":json-false") :json-false)
+    ((or "false" "nil" "no" ":json-false") "false")
     (_ val)))
 
 (defun lab--time-ago (past)
