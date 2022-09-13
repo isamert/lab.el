@@ -153,13 +153,6 @@ listing possible actions on a selection."
   "Return the last item of LIST."
   (car (last list)))
 
-(defun lab-alist-completing-read (prompt alist)
-  "Like `completing-read' but return value of the selected key in
-given ALIST."
-  (alist-get
-   (completing-read prompt alist)
-   alist nil nil #'equal))
-
 ;; Taken from transient.el
 (defun lab--plist-to-alist (plist)
   (let (alist)
@@ -182,13 +175,6 @@ given ALIST."
   (unless (get-buffer-window lab--inspect-buffer-name)
     (switch-to-buffer-other-window lab--inspect-buffer-name)))
 
-(defmacro lab--with-completing-read-exact-order (&rest body)
-  "Disable any kind of sorting in completing read."
-  `(let ((selectrum-should-sort nil)
-         (vertico-sort-function nil))
-     (ignore selectrum-should-sort vertico-sort-function)
-     ,@body))
-
 (defun lab--plist-remove-keys-with-prefix (prefix lst)
   "Return a copy of LST without the key-value pairs whose keys
 starts with PREFIX."
@@ -204,7 +190,7 @@ starts with PREFIX."
 ;; The discussion made here[1] was quite helpful for implementing the following functionality.
 ;; [1]: https://github.com/oantolin/embark/issues/495
 
-(cl-defun lab--completing-read-object (prompt objects &key (formatter #'identity) category predicate require-match initial-input hist def inherit-input-method)
+(cl-defun lab--completing-read-object (prompt objects &key (formatter #'identity) category predicate require-match initial-input hist def inherit-input-method (sort? t))
   "Same as `completing-read' but applies FORMATTER to every object
 and propertizes candidates with the actual object so that they
 can be retrieved later by embark actions. Also adds category
@@ -223,7 +209,11 @@ metadata to each candidate, if given."
            (format "%s: " prompt)
            (lambda (string predicate action)
              (if (eq action 'metadata)
-                 (list 'metadata (when category (cons 'category category)))
+                 `(metadata
+                   ,(when category (cons 'category category))
+                   ,@(unless sort?
+                       '((display-sort-function . identity)
+                         (cycle-sort-function . identity))))
                (complete-with-action
                 action object-strings string predicate)))
            predicate require-match initial-input hist def inherit-input-method)))
@@ -316,12 +306,13 @@ metadata to each candidate, if given."
 
        ;; Generate the `...-act' function which let's user select one
        ;; of the inputs and act on them
-       (defun ,(funcall lab--generate-action-name category "act-on" t) (items)
+       (cl-defun ,(funcall lab--generate-action-name category "act-on" t) (items &key (sort? t))
          (let* ((result (lab--completing-read-object
                          (format "%s: " (s-titleize (format "%s" ',category)))
                          items
                          :formatter ,formatter
-                         :category ',lab-category-full-name))
+                         :category ',lab-category-full-name
+                         :sort? sort?))
                 (action (pcase lab-action-handler
                           ('read-multiple-choice
                            (nth 1 (read-multiple-choice
@@ -555,10 +546,10 @@ project is used."
   "List latest pipelines belonging to PROJECT. If PROJECT is nil,
 current git project is used."
   (interactive)
-  (lab--with-completing-read-exact-order
-   (lab--sort-by-latest-updated
-    (lab-pipeline-act-on
-     (lab-get-project-pipelines project)))))
+  (lab--sort-by-latest-updated
+   (lab-pipeline-act-on
+    (lab-get-project-pipelines project)
+    :sort? nil)))
 
 
 ;;; Pipelines
@@ -602,9 +593,9 @@ current git project is used."
 
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
-  (lab--with-completing-read-exact-order
-   (lab-job-act-on
-    (lab-get-pipeline-jobs project-id pipeline-id))))
+  (lab-job-act-on
+   (lab-get-pipeline-jobs project-id pipeline-id)
+   :sort? nil))
 
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
@@ -721,55 +712,55 @@ manual action."
         (format "projects/%s/merge_requests/%s/rebase" .project_id .iid)
         :%type "PUT"))
    (?p "Pipelines"
-       (lab--with-completing-read-exact-order
-        (lab-pipeline-act-on
-         (lab--sort-by-latest-updated
-          (lab--request
-           (format "projects/%s/merge_requests/%s/pipelines" .project_id .iid)
-           :scope 'all
-           :state 'opened)))))
+       (lab-pipeline-act-on
+        (lab--sort-by-latest-updated
+         (lab--request
+          (format "projects/%s/merge_requests/%s/pipelines" .project_id .iid)
+          :scope 'all
+          :state 'opened))
+        :sort? nil))
    (?i "Inspect"
        (lab--inspect-obj it))))
 
 (defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
   (interactive)
-  (lab--with-completing-read-exact-order
-   (lab-merge-request-act-on
-    (lab--sort-by-latest-updated
-     (lab--request
-      "projects/#{project}/merge_requests"
-      :scope 'all
-      :state 'opened
-      :source_branch (lab-git-current-branch))))))
+  (lab-merge-request-act-on
+   (lab--sort-by-latest-updated
+    (lab--request
+     "projects/#{project}/merge_requests"
+     :scope 'all
+     :state 'opened
+     :source_branch (lab-git-current-branch)))
+   :sort? nil))
 
 (defun lab-list-my-merge-requests ()
   "List all of your currently open merge requests.
 `Your' means either it's created by you or assigned to you."
   (interactive)
-  (lab--with-completing-read-exact-order
-   (lab-merge-request-act-on
-    (lab--sort-by-latest-updated
-     `(,@(lab--request
-          "merge_requests"
-          :scope 'created_by_me
-          :state 'opened)
-       ,@(lab--request
-          "merge_requests"
-          :scope 'assigned_to_me
-          :state 'opened))))))
+  (lab-merge-request-act-on
+   (lab--sort-by-latest-updated
+    `(,@(lab--request
+         "merge_requests"
+         :scope 'created_by_me
+         :state 'opened)
+      ,@(lab--request
+         "merge_requests"
+         :scope 'assigned_to_me
+         :state 'opened)))
+   :sort? nil))
 
 (defun lab-list-group-merge-requests (&optional group)
   "List all open MRs that belongs to GROUP.
 If GROUP is omitted, `lab-group' is used."
   (interactive)
-  (lab--with-completing-read-exact-order
-   (lab-merge-request-act-on
-    (lab--sort-by-latest-updated
-     (lab--request
-      (format "groups/%s/merge_requests" (or group "#{group}"))
-      :scope 'all
-      :state 'opened)))))
+  (lab-merge-request-act-on
+   (lab--sort-by-latest-updated
+    (lab--request
+     (format "groups/%s/merge_requests" (or group "#{group}"))
+     :scope 'all
+     :state 'opened))
+   :sort? nil))
 
 (defun lab-create-merge-request (&optional project)
   "Create an MR interactively for current git project."
