@@ -532,7 +532,8 @@ If it's omitted, currently open project is used."
   (lab-merge-request-act-on
    (lab--request
     (format "projects/%s/merge_requests" (or project "#{project}"))
-    :scope 'all)))
+    :scope 'all)
+   :sort? nil))
 
 ;;;###autoload
 (defun lab-get-project-pipelines (&optional project)
@@ -903,11 +904,20 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--format-project-title (project)
   (alist-get 'name_with_namespace project))
 
+(defun lab--fontify-status (status)
+  (propertize
+   (upcase .status) 'face
+   `(:foreground ,(pcase (downcase .status)
+                    ("failed" "red")
+                    ("success" "green")
+                    ("manual" "orange")))))
+
 (defun lab--format-pipeline (it)
   (let-alist it
     (format
      "%7s | %8s, %6s → %s (%s)%s"
-     (upcase .status) .id .source .ref
+     (lab--fontify-status .status)
+     .id .source .ref
      (lab--time-ago (date-to-time .updated_at))
      (if .user (format " by %s" (alist-get 'username .user)) ""))))
 
@@ -915,7 +925,7 @@ If GROUP is omitted, `lab-group' is used."
   (let-alist it
     (format
      "%7s | %8s, %15s on %s%s"
-     (upcase .status) .id (propertize .name 'face 'bold) .ref
+     (lab--fontify-status .status) .id (propertize .name 'face 'bold) .ref
      (if .user
          (format " by %s"  (propertize (alist-get 'username .user) 'face 'italic))
        ""))))
