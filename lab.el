@@ -546,10 +546,10 @@ project is used."
   "List latest pipelines belonging to PROJECT. If PROJECT is nil,
 current git project is used."
   (interactive)
-  (lab--sort-by-latest-updated
-   (lab-pipeline-act-on
-    (lab-get-project-pipelines project)
-    :sort? nil)))
+  (lab-pipeline-act-on
+   (lab--sort-by-latest-updated
+    (lab-get-project-pipelines project))
+   :sort? nil))
 
 
 ;;; Pipelines
@@ -630,6 +630,7 @@ manual action."
            (_
             (lab-watch-pipeline url t))))))))
 
+;;;###autoload
 (defun lab-watch-pipeline-for-last-commit ()
   "Start watching the pipeline created by your last commit."
   (interactive)
@@ -640,6 +641,50 @@ manual action."
                        (lab-get-project-pipelines))))
       (lab-watch-pipeline (alist-get 'web_url pipeline))
     (user-error "Seems like there are no pipelines created for your last commit")))
+
+;;;###autoload
+(defun lab-watch-merge-request-last-pipeline (mr)
+  "Start watching the latest pipeline of given MR."
+  (let* ((lab-result-count 1)
+         (pipeline (car (lab-get-merge-request-pipelines
+                         (alist-get 'project_id mr)
+                         (alist-get 'iid mr)))))
+    (lab-watch-pipeline (alist-get 'web_url pipeline))))
+
+
+;;; lab-trace-mode
+
+;; TODO Add retry action for `lab-trace-mode-current-job' and start watching it
+;; automatically
+
+(defvar-local lab-trace-mode-current-job nil
+  "Currently inspected job object.")
+
+(defvar lab-trace-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "<f6>")
+      #'(lambda () (interactive) (lab--open-web-url (alist-get 'web_url lab-trace-mode-current-job))))
+    map)
+  "Keymap for `lab-trace-mode'.")
+
+(define-derived-mode lab-trace-mode prog-mode "lab-trace-mode"
+  "Major mode for showing trace of a job.")
+
+(defun lab-show-job-logs (job)
+  (let-alist job
+    (with-current-buffer (get-buffer-create (format "*lab-trace:%s-%s*" .id .name))
+      (lab-trace-mode)
+      (setq-local lab-trace-mode-current-job job)
+      (insert
+       (ansi-color-apply
+        (replace-regexp-in-string
+         "\r" "\n"
+         (lab--request
+          (format "projects/%s/jobs/%s/trace"
+                  (or .project_id (alist-get 'project_id .pipeline))
+                  .id)
+          :%raw? t))))
+      (switch-to-buffer-other-window (current-buffer)))))
 
 
 ;;; Jobs
@@ -662,20 +707,7 @@ manual action."
         (format "projects/%s/jobs/%s/erase" .project_id .id)
         :%type "POST"))
    (?t "Trace/logs"
-       (with-current-buffer (get-buffer-create (format "*lab-trace:%s-%s*" .id .name))
-         ;; TODO create lab-trace-mode?
-         (prog-mode)
-         (insert
-          (ansi-color-apply
-           (replace-regexp-in-string
-            "
-" "\n"
-            (lab--request
-             (format "projects/%s/jobs/%s/trace"
-                     (or .project_id (alist-get 'project_id .pipeline))
-                     .id)
-             :%raw? t))))
-         (switch-to-buffer-other-window (current-buffer))))
+       (lab-show-job-logs it))
    (?i "Inspect"
        (lab--inspect-obj it))
    (?I "Inspect detailed"
@@ -685,6 +717,19 @@ manual action."
 (defun lab-get-job (project-id job-id)
   "Get detailed information about a single job."
   (lab--request (format "projects/%s/jobs/%s" project-id job-id)))
+
+(defun lab-show-logs-for-last-failed-pipeline-job (&optional project)
+  (interactive)
+  (let* ((failed?
+          (lambda (it)
+            (equal (downcase (alist-get 'status it)) "failed")))
+         (last-failed-pipeline (seq-find failed? (lab-get-project-pipelines (or project "#{project}")))))
+    (if last-failed-pipeline
+        (let-alist last-failed-pipeline
+          (let ((job (seq-find failed? (lab-get-pipeline-jobs .project_id .id))))
+            (if job (lab-show-job-logs job)
+              (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
+      (user-error "Not a single failed pipeline, congrats :)"))))
 
 
 ;;; Merge Requests
@@ -719,8 +764,14 @@ manual action."
           :scope 'all
           :state 'opened))
         :sort? nil))
+   (?w "Watch last pipeline"
+       (lab-watch-merge-request-latest-pipeline it))
    (?i "Inspect"
        (lab--inspect-obj it))))
+
+(defun lab-get-merge-request-pipelines (project mr-id)
+  (lab--request
+   (format "projects/%s/merge_requests/%s/pipelines" project mr-id)))
 
 (defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
