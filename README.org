@@ -115,6 +115,13 @@ Some packages enhances ~lab.el~ with extra features:
     (add-hook YOUR-PUSH-HOOK #'lab-watch-pipeline-for-last-commit)
   #+end_src
 
+- If you are using [[https://github.com/magit/magit][magit]], following advice may be used for triggering pipeline watcher after each push:
+
+#+begin_src emacs-lisp
+  (define-advice magit-push-current-to-pushremote (:after (&rest _) start-watching-pipeline)
+    (lab-watch-pipeline-for-last-commit))
+#+end_src
+
 * Using as a GitLab API client
 
 You can use the provided ~lab--request~ function write your on [[https://docs.gitlab.com/ee/api/api_resources.html][GitLab API]] wrappers:
