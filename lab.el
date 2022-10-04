@@ -130,6 +130,15 @@ listing possible actions on a selection."
   :group 'lab
   :type 'sexp)
 
+(defcustom lab-pipeline-watcher-initial-delay
+  30
+  "Pipelines do not start immediately after a push, it may take a
+while for them to come online. This delay is used in functions
+`lab-watch-pipeline-for-*' so that you can use these functions as
+hooks without worrying about lags. Value is in seconds."
+  :type 'number
+  :group 'lab)
+
 
 ;;; Internal variables/constants:
 
@@ -138,6 +147,8 @@ listing possible actions on a selection."
 
 (defvar lab--action-selection-title "Action: "
   "The text displayed on action selection menus.")
+
+(defvar lab--pipeline-watcher-debounce-time 30)
 
 (defconst lab--max-per-page-result-count
   100)
@@ -613,7 +624,7 @@ manual action."
     (unless rerun?
       (message ">> Started watching pipeline %s on %s!" pipeline project))
     (run-with-timer
-     (if rerun? 20 1)
+     (if rerun? lab--pipeline-watcher-debounce-time 1)
      nil
      (lambda ()
        (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
@@ -635,22 +646,30 @@ manual action."
 (defun lab-watch-pipeline-for-last-commit ()
   "Start watching the pipeline created by your last commit."
   (interactive)
-  (if-let* ((sha (lab-git-last-commit-sha))
-            (lab-result-count 3)
-            (pipeline (seq-find
-                       (lambda (it) (equal sha (alist-get 'sha it)))
-                       (lab-get-project-pipelines))))
-      (lab-watch-pipeline (alist-get 'web_url pipeline))
-    (user-error "Seems like there are no pipelines created for your last commit")))
+  ;; Pipeline may take some time to appear
+  (run-with-timer
+   lab-pipeline-watcher-initial-delay nil
+   (lambda ()
+     (if-let* ((sha (lab-git-last-commit-sha))
+               (lab-result-count 3)
+               (pipeline (seq-find
+                          (lambda (it) (equal sha (alist-get 'sha it)))
+                          (lab-get-project-pipelines))))
+         (lab-watch-pipeline (alist-get 'web_url pipeline))
+       (user-error "Seems like there are no pipelines created for your last commit")))))
 
 ;;;###autoload
 (defun lab-watch-merge-request-last-pipeline (mr)
   "Start watching the latest pipeline of given MR."
-  (let* ((lab-result-count 1)
-         (pipeline (car (lab-get-merge-request-pipelines
-                         (alist-get 'project_id mr)
-                         (alist-get 'iid mr)))))
-    (lab-watch-pipeline (alist-get 'web_url pipeline))))
+  ;; Pipeline may take some time to appear
+  (run-with-timer
+   lab-pipeline-watcher-initial-delay nil
+   (lambda ()
+     (let* ((lab-result-count 1)
+            (pipeline (car (lab-get-merge-request-pipelines
+                            (alist-get 'project_id mr)
+                            (alist-get 'iid mr)))))
+       (lab-watch-pipeline (alist-get 'web_url pipeline))))))
 
 
 ;;; lab-trace-mode
