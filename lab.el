@@ -925,8 +925,8 @@ If GROUP is omitted, `lab-group' is used."
 
 (defun lab--fontify-status (status)
   (propertize
-   (upcase .status) 'face
-   `(:foreground ,(pcase (downcase .status)
+   (upcase status) 'face
+   `(:foreground ,(pcase (downcase status)
                     ("failed" "red")
                     ("success" "green")
                     ("manual" "orange")))))
