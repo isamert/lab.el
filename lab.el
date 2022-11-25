@@ -741,7 +741,7 @@ manual action."
   "Get detailed information about a single job."
   (lab--request (format "projects/%s/jobs/%s" project-id job-id)))
 
-(defun lab-show-logs-for-last-failed-pipeline-job (&optional project)
+(defun lab-act-on-last-failed-pipeline-job (&optional project)
   (interactive)
   (let* ((failed?
           (lambda (it)
@@ -749,8 +749,8 @@ manual action."
          (last-failed-pipeline (seq-find failed? (lab-get-project-pipelines (or project "#{project}")))))
     (if last-failed-pipeline
         (let-alist last-failed-pipeline
-          (let ((job (seq-find failed? (lab-get-pipeline-jobs .project_id .id))))
-            (if job (lab-show-job-logs job)
+          (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
+            (if (and jobs (length= jobs 1)) (lab-job-act-on jobs :sort? nil)
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
