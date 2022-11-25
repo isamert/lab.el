@@ -646,17 +646,20 @@ manual action."
 (defun lab-watch-pipeline-for-last-commit ()
   "Start watching the pipeline created by your last commit."
   (interactive)
-  ;; Pipeline may take some time to appear
-  (run-with-timer
-   lab-pipeline-watcher-initial-delay nil
-   (lambda ()
-     (if-let* ((sha (lab-git-last-commit-sha))
-               (lab-result-count 3)
-               (pipeline (seq-find
-                          (lambda (it) (equal sha (alist-get 'sha it)))
-                          (lab-get-project-pipelines))))
-         (lab-watch-pipeline (alist-get 'web_url pipeline))
-       (user-error "Seems like there are no pipelines created for your last commit")))))
+  (unless (s-prefix? lab-host (lab-git-remote-homepage))
+    (user-error "Not a valid Gitlab repo."))
+  (let ((project (lab--project-path))
+        (sha (lab-git-last-commit-sha)))
+    ;; Pipeline may take some time to appear
+    (run-with-timer
+     lab-pipeline-watcher-initial-delay nil
+     (lambda ()
+       (if-let* ((lab-result-count 3)
+                 (pipeline (seq-find
+                            (lambda (it) (equal sha (alist-get 'sha it)))
+                            (lab-get-project-pipelines project))))
+           (lab-watch-pipeline (alist-get 'web_url pipeline))
+         (user-error "Seems like there are no pipelines created for your last commit"))))))
 
 ;;;###autoload
 (defun lab-watch-merge-request-last-pipeline (mr)
