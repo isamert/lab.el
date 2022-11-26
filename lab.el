@@ -1,4 +1,4 @@
-;;; lab.el --- An Emacs interface for GitLab -*- lexical-binding: t; -*-
+;;; lab.el --- An interface for GitLab -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2022 Isa Mert Gurbuz
 
@@ -6,7 +6,7 @@
 ;; Version: 0.1
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1"))
+;; Package-Requires: ((emacs "27.1") (embark "0.12") (alert "1.2") (memoize "1.1") (request "0.3.2"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -196,6 +196,9 @@ starts with PREFIX."
     (map-keys lst)))
   lst)
 
+(defun lab-length= (lst it)
+  (= (length lst) it))
+
 
 ;;; Selection utilities
 ;; The discussion made here[1] was quite helpful for implementing the following functionality.
@@ -217,7 +220,7 @@ metadata to each candidate, if given."
            objects))
          (selected
           (completing-read
-           (format "%s: " prompt)
+           prompt
            (lambda (string predicate action)
              (if (eq action 'metadata)
                  `(metadata
@@ -477,7 +480,7 @@ results in a list and return them."
                       `(("per_page" . ,lab-result-count)))
                   ,@(lab--plist-to-alist params)))
       (setq lastid
-            (when (and %collect-all? (length= json lab--max-per-page-result-count))
+            (when (and %collect-all? (lab-length= json lab--max-per-page-result-count))
               (alist-get 'id (lab-last-item json)))))
     (if %collect-all? all-items json)))
 
@@ -750,7 +753,7 @@ manual action."
     (if last-failed-pipeline
         (let-alist last-failed-pipeline
           (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
-            (if (and jobs (length= jobs 1)) (lab-job-act-on jobs :sort? nil)
+            (if (and jobs (lab-length= jobs 1)) (lab-job-act-on jobs :sort? nil)
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
@@ -893,7 +896,7 @@ If GROUP is omitted, `lab-group' is used."
                         yaml
                         (s-split "\n")
                         (mapcar (lambda (it) (mapcar #'s-trim (s-split-up-to ": " it 1))))
-                        (seq-filter (lambda (it) (and (length= it 2)
+                        (seq-filter (lambda (it) (and (lab-length= it 2)
                                                  (not (s-blank? (car it))))))
                         (mapcar (lambda (it) (list (intern (concat ":" (car it)))
                                               (lab--deserialize-yaml-value (cadr it)))))
