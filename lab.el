@@ -502,6 +502,8 @@ results in a list and return them."
         (read-directory-name "Directory to clone in: " lab-projects-directory)))
    (?m "List merge requests"
        (lab-list-project-merge-requests .id))
+   (?p "List pipelines"
+       (lab-list-project-pipelines .id))
    (?i "Inspect"
        (lab--inspect-obj it))))
 
@@ -940,7 +942,7 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--format-pipeline (it)
   (let-alist it
     (format
-     "%7s | %8s, %6s → %s (%s)%s"
+     "%8s | %8s, %6s → %s (%s)%s"
      (lab--fontify-status .status)
      .id .source .ref
      (lab--time-ago (date-to-time .updated_at))
@@ -949,7 +951,7 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--format-job (it)
   (let-alist it
     (format
-     "%7s | %8s, %15s on %s%s"
+     "%8s | %8s, %15s on %s%s"
      (lab--fontify-status .status) .id (propertize .name 'face 'bold) .ref
      (if .user
          (format " by %s"  (propertize (alist-get 'username .user) 'face 'italic))
