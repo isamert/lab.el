@@ -438,8 +438,30 @@ project."
      &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil) (%raw? nil)
      &allow-other-keys)
   "Do a GitLab request.
+
+%TYPE, %HEADERS, %DATA, %COLLECT-ALL and %RAW are special
+ parameters, rest of the given parameters are added into ENDPOINT
+ as url parameters.
+
 When %COLLECT-ALL is non-nil, do a paged request and collect all
-results in a list and return them."
+results in a list and return them.
+
+When %RAW is non-nil, return raw response from GitLab instead of
+interpreting it as JSON and casting it into an alist.
+
+If ENDPOINT requires a project path, you can use `#{project}'
+special syntax to refer to the current project which is inherited
+from the buffer this function is called from.
+
+Examples:
+
+  ;; Get *all* pipelines currently running on master.
+  (lab--request
+   \"projects/#{project}/pipelines\"
+   :scope \"running\"
+   :ref \"master\"
+   :%collect-all t)
+"
 
   ;; Remove meta items from params list so that we can use `params' as
   ;; url parameters
