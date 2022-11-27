@@ -95,6 +95,8 @@ Here are few screenshots to get a feel of what you would see while using ~lab.el
 
 [[file:https://user-images.githubusercontent.com/8031017/204106589-7558cac5-e41c-4fe5-8834-1df610b736f4.png]]
 
+By default, actions can be selected using ~read-multiple-choice~. You can change this to a ~completing-read~ based action handler by modifying the ~lab-action-handler~ variable.
+
 [[file:https://user-images.githubusercontent.com/8031017/204106597-f51d3e9c-084e-45e2-bbeb-c2dee6a7a2d9.png]]
 
 Other functions work in similar fashion, where you list something (projects/pipelines/jobs etc.) and act upon them. Here is how you create a merge request:
