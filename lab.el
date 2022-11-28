@@ -731,7 +731,7 @@ manual action."
          "\r" "\n"
          (lab--request
           (format "projects/%s/jobs/%s/trace"
-                  (or .project_id (alist-get 'project_id .pipeline))
+                  (lab--projid-for-job job)
                   .id)
           :%raw? t))))
       (switch-to-buffer-other-window (current-buffer)))))
@@ -746,15 +746,15 @@ manual action."
        (lab--open-web-url .web_url))
    (?r "Retry"
        (lab--request
-        (format "projects/%s/jobs/%s/retry" .project_id .id)
+        (format "projects/%s/jobs/%s/retry" (lab--projid-for-job it) .id)
         :%type "POST"))
    (?c "Cancel"
        (lab--request
-        (format "projects/%s/jobs/%s/cancel" .project_id .id)
+        (format "projects/%s/jobs/%s/cancel" (lab--projid-for-job it) .id)
         :%type "POST"))
    (?d "Delete"
        (lab--request
-        (format "projects/%s/jobs/%s/erase" .project_id .id)
+        (format "projects/%s/jobs/%s/erase" (lab--projid-for-job it) .id)
         :%type "POST"))
    (?t "Trace/logs"
        (lab-show-job-logs it))
@@ -762,7 +762,7 @@ manual action."
        (lab--inspect-obj it))
    (?I "Inspect detailed"
        (lab--inspect-obj
-        (lab-get-job .project_id .id)))))
+        (lab-get-job (lab--projid-for-job it) .id)))))
 
 (defun lab-get-job (project-id job-id)
   "Get detailed information about a single job."
@@ -1018,6 +1018,8 @@ If GROUP is omitted, `lab-group' is used."
      "%s %s%s ago"
      count (cdr int) (if (> count 1) "s" ""))))
 
+(defun lab--projid-for-job (job)
+  (or (alist-get 'project_id job) (alist-get 'project_id (alist-get 'pipeline job))))
 
 (provide 'lab)
 
