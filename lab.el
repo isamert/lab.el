@@ -373,6 +373,7 @@ metadata to each candidate, if given."
 
 ;;;###autoload
 (defun lab-git-remote-homepage ()
+  "Generate API base homepage from repository origin remote URL"
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
     (cond
      ((s-contains? "@" remote-url)
@@ -380,7 +381,7 @@ metadata to each candidate, if given."
         remote-url
         (s-split "@")
         (nth 1)
-        (s-replace ":" "/")
+        (s-replace-regexp ":[0-9]\*/\*" "/")
         (s-chop-suffix ".git")
         (s-prepend "https://")))
      (t (s-chop-suffix ".git" remote-url)))))
