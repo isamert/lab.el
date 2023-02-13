@@ -297,14 +297,14 @@ metadata to each candidate, if given."
 
        ;; Define embark keymap and add it to `embark-keymap-alist.'
        ;; This uses the functions generated above.
-       (embark-define-keymap ,lab-keymap-full-name
-         ,(format "Actions for %s" lab-category-full-name)
-         ,@(mapcar
-            (lambda (keydef)
-              (list
-               (char-to-string (nth 0 keydef))
-               (funcall lab--generate-action-name category (nth 1 keydef))))
-            keymap))
+       (defvar ,lab-keymap-full-name
+         (let ((map (make-sparse-keymap)))
+           ,@(mapcar
+              (lambda (keydef)
+                `(define-key map ,(char-to-string (nth 0 keydef)) #',(funcall lab--generate-action-name category (nth 1 keydef))))
+              keymap)
+           map)
+         ,(format "Actions for %s" lab-category-full-name))
        (add-to-list
         'embark-keymap-alist
         '(,lab-category-full-name . ,lab-keymap-full-name))
