@@ -778,7 +778,8 @@ manual action."
     (if last-failed-pipeline
         (let-alist last-failed-pipeline
           (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
-            (if (and jobs (lab-length= jobs 1)) (lab-job-act-on jobs :sort? nil)
+            (if (and jobs (> (length jobs) 0))
+                (lab-job-act-on jobs :sort? nil)
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
