@@ -64,7 +64,7 @@
 (defcustom lab-group
   nil
   "The GitLab group you mostly work on.
- Required only for functions containing `-group-' phrase."
+Required only for functions containing `-group-' phrase."
   :type 'string
   :group 'lab)
 
@@ -145,9 +145,9 @@ Mostly used for convenience-related stuff.."
   30
   "Initial delay before starting to watch pipelines.
 Pipelines do not start immediately after a push, it may take a
-while for them to come online. This delay is used in functions
+while for them to come online.  This delay is used in functions
 `lab-watch-pipeline-for-*' so that you can use these functions as
-hooks without worrying about lags. Value is in seconds."
+hooks without worrying about lags.  Value is in seconds."
   :type 'number
   :group 'lab)
 
@@ -204,7 +204,7 @@ this limit, please let me know.")
     (switch-to-buffer-other-window lab--inspect-buffer-name)))
 
 (defun lab--plist-remove-keys-with-prefix (prefix lst)
-  "Return a copy of LST without the key-value pairs whose keys starts with PREFIX."
+  "Return a copy of LST without the key-value pairs whose keys start with PREFIX."
   (seq-each
    (lambda (it) (setq lst (map-delete lst it)))
    (seq-filter
@@ -222,10 +222,11 @@ this limit, please let me know.")
 ;; [1]: https://github.com/oantolin/embark/issues/495
 
 (cl-defun lab--completing-read-object (prompt objects &key (formatter #'identity) category predicate require-match initial-input hist def inherit-input-method (sort? t))
-  "Same as `completing-read' but applies FORMATTER to every object
-and propertizes candidates with the actual object so that they
-can be retrieved later by embark actions. Also adds category
-metadata to each candidate, if given."
+  "`completing-read' with formatter and sort control.
+Applies FORMATTER to every object in OBJECTS and propertizes
+candidates with the actual object so that they can be retrieved
+later by embark actions.  Also adds category metadata to each
+candidate, if given.  PROMPT passed to `completing-read' as is."
   (let* ((object-table
           (make-hash-table :test 'equal :size (length objects)))
          (object-strings
@@ -259,7 +260,21 @@ metadata to each candidate, if given."
      on-accept
      on-reject
      parser)
-  "Display a buffer to user to enter some input."
+  "Prompt the user for input in a new buffer with customizable options.
+Keyword arguments:
+- MODE - the major mode to use for the new buffer.
+- INIT - initial text to display in the buffer.
+- BUFFER-NAME - name of the new buffer to create.
+- ON-START - no-arg function to run before the user input prompt is displayed.
+- ON-ACCEPT - function to run when the user accepts the input.
+- ON-REJECT - no-arg function to run when the user rejects the input
+- PARSER - an function to parse user input before passing to on-accept function
+
+The prompt provides instructions for the user to accept or reject
+input.  When the user accepts the input, the on-accept function
+is called with the input and parser result if given, and the
+buffer is killed.  When the user rejects the input, the on-reject
+function is called if given and the buffer is simply killed."
   (let* ((buffer (get-buffer-create buffer-name))
          (success-handler (lambda ()
                             (interactive)
@@ -365,7 +380,7 @@ metadata to each candidate, if given."
 (defvar project-current-inhibit-prompt)
 (defvar project-current-directory-override)
 (defmacro lab--within-current-project (&rest forms)
-  "Lets you run FORMS in current projects directory."
+  "Let you run FORMS in current projects directory."
   `(let ((default-directory
           (or
            (when (boundp 'project-current-inhibit-prompt)
@@ -385,6 +400,7 @@ metadata to each candidate, if given."
 
 ;;;###autoload
 (defun lab-git-last-commit-sha ()
+  "Return last commits SHA for current project."
   (s-trim (shell-command-to-string "git rev-parse HEAD")))
 
 ;;;###autoload
@@ -405,7 +421,7 @@ metadata to each candidate, if given."
 
 ;;;###autoload
 (defun lab-git-remote-homepage ()
-  "Generate API base homepage from repository origin remote URL"
+  "Generate API base homepage from repository origin remote URL."
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
     (cond
      ((s-contains? "@" remote-url)
@@ -473,8 +489,8 @@ project."
   "Do a GitLab request.
 
 %TYPE, %HEADERS, %DATA, %COLLECT-ALL and %RAW are special
- parameters, rest of the given parameters are added into ENDPOINT
- as url parameters.
+parameters, rest of the given PARAMS are added into ENDPOINT as
+url parameters.
 
 When %COLLECT-ALL is non-nil, do a paged request and collect all
 results in a list and return them.
@@ -493,8 +509,7 @@ Examples:
    \"projects/#{project}/pipelines\"
    :scope \"running\"
    :ref \"master\"
-   :%collect-all t)
-"
+   :%collect-all t)"
 
   ;; Remove meta items from params list so that we can use `params' as
   ;; url parameters
@@ -521,7 +536,7 @@ Examples:
                       (setq all-items `(,@all-items ,@json)))))
         :error (cl-function
                 (lambda (&key data &allow-other-keys)
-                  (error "lab--request failed with %s" data)))
+                  (error ">> lab--request failed with %s" data)))
         :sync t
         :data (lab--plist-to-alist %data)
         :params `(,@(when %collect-all?
@@ -572,10 +587,10 @@ Examples:
 
 ;;;###autoload
 (defun lab-list-all-group-projects (&optional group)
-  "List all group projects and act on them. See `lab-group'.
-BE CAREFUL, this function tries to fetch all functions belonging
-to given group. Result is memoized after first call for
-`memoize-default-timeout'."
+  "List all GROUP projects and act on them.
+See `lab-group'.  BE CAREFUL, this function tries to fetch all
+functions belonging to given group.  Result is memoized after
+first call for `memoize-default-timeout'."
   (interactive)
   (lab-project-act-on (lab-get-all-group-projects group)))
 
@@ -590,9 +605,9 @@ to given group. Result is memoized after first call for
 ;;;###autoload
 (defun lab-list-all-owned-projects ()
   "Get all projects owned by you.
-BE CAREFUL, this function tries to fetch all functions belonging
-to given group. Result is memoized after first call for
-`memoize-default-timeout'."
+  BE CAREFUL, this function tries to fetch all functions belonging
+  to given group. Result is memoized after first call for
+  `memoize-default-timeout'."
   (interactive)
   (lab-project-act-on (lab-get-all-owned-projects)))
 
@@ -713,7 +728,7 @@ recurring call, instead of a new watch request."
   "Start watching the pipeline created by your last commit."
   (interactive)
   (unless (s-prefix? lab-host (lab-git-remote-homepage))
-    (user-error "Not a valid Gitlab repo."))
+    (user-error "Not a valid Gitlab repo"))
   (let ((project (lab--project-path))
         (sha (lab-git-last-commit-sha)))
     ;; Pipeline may take some time to appear
