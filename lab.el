@@ -1,12 +1,12 @@
 ;;; lab.el --- An interface for GitLab -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022 Isa Mert Gurbuz
+;; Copyright (C) 2023 Isa Mert Gurbuz
 
 ;; Author: Isa Mert Gurbuz <isamertgurbuz@gmail.com>
-;; Version: 0.1
+;; Version: 1.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (embark "0.12") (alert "1.2") (memoize "1.1") (request "0.3.2") (s "1.10.0"))
+;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -23,17 +23,26 @@
 
 ;;; Commentary:
 
-;; Simple integration with GitLab.
+;; lab.el is an Emacs package that provides a simple integration with
+;; GitLab (managed or self-hosted).
+;;
+;; Provides you easier access to some GitLab functionality regarding to:
+;; - Projects :: list, open, clone, list MRs...
+;; - Merge Requests :: list, open, create, rebase, list pipelines...
+;; - Pipelines :: list, open, retry, cancel, delete, watch status...
+;; - Jobs :: list, open, retry, cancel, delete, show logs/traces...
+;;
+;; lab.el also provides you `lab--request' function which you can use
+;; to do GitLab API calls easily.
 
 ;;; Code:
 
 (require 's)
 (require 'pp)
+(require 'vc)
 (require 'vc-git)
 (require 'request)
 (require 'memoize)
-(require 'embark)
-(require 'alert)
 (require 'ansi-color)
 
 
@@ -43,18 +52,19 @@
   nil
   "GitLab API token."
   :type 'string
-  :group 'lab)
+  :group 'lab
+  :prefix "lab-")
 
 (defcustom lab-host
-  nil
+  "https://gitlab.com"
   "GitLab host, like `https://gitlab.mycompany.com'."
   :type 'string
   :group 'lab)
 
 (defcustom lab-group
   nil
-  "The GitLab group you mostly work on. Required only for functions
-containing `-group-' phrase."
+  "The GitLab group you mostly work on.
+ Required only for functions containing `-group-' phrase."
   :type 'string
   :group 'lab)
 
@@ -84,15 +94,14 @@ containing `-group-' phrase."
 
 (defcustom lab-result-count
   20
-  "Total result count for `lab-list-X' functions. Can't be higher
-than `lab--max-per-page-result-count'."
+  "Total result count for `lab-list-X' functions.
+Can't be higher than `lab--max-per-page-result-count'."
   :type 'integer
   :group 'lab)
 
 (defcustom lab-should-open-pipeline-on-manual-action?
   nil
-  "Should pipeline web page automatically be opened if it requires
-a manual action?"
+  "Should pipeline web page automatically be opened if it requires a manual action?"
   :type 'boolean
   :group 'lab)
 
@@ -105,15 +114,17 @@ a manual action?"
 
 (defcustom lab-action-handler
   'read-multiple-choice
-  "Default action handler. `lab' uses the given function for
-listing possible actions on a selection."
+  "Default action handler.
+`lab' uses the given function for listing possible actions on a
+selection."
   :type '(choice (const :tag "completing-read" completing-read)
                  (const :tag "read-multiple-choice" read-multiple-choice))
   :group 'lab)
 
 (defcustom lab-main-branch-name
   "main"
-  "Default main branch name used in your projects, like \"main\", \"master\" etc."
+  "Default main branch name used in your projects, like \"main\", \"master\" etc.
+Mostly used for convenience-related stuff.."
   :type 'string
   :group 'lab)
 
@@ -132,7 +143,8 @@ listing possible actions on a selection."
 
 (defcustom lab-pipeline-watcher-initial-delay
   30
-  "Pipelines do not start immediately after a push, it may take a
+  "Initial delay before starting to watch pipelines.
+Pipelines do not start immediately after a push, it may take a
 while for them to come online. This delay is used in functions
 `lab-watch-pipeline-for-*' so that you can use these functions as
 hooks without worrying about lags. Value is in seconds."
@@ -150,12 +162,17 @@ hooks without worrying about lags. Value is in seconds."
 
 (defvar lab--pipeline-watcher-debounce-time 30)
 
-(defconst lab--max-per-page-result-count
-  100)
+(defconst lab--max-per-page-result-count 100
+  "This is the hard limit set by GitLab.
+lab.el does not support pagination because I didn't need to deal
+with stuff more than this limit.  If you are having issues with
+this limit, please let me know.")
 
 (defconst lab--regex-yaml-metadata-border
   "\\(-\\{3\\}\\)$"
   "Regular expression for matching YAML metadata.")
+
+(defconst lab--diff-buffer-name "*lab-diff*")
 
 
 ;;; Elisp helpers:
@@ -187,8 +204,7 @@ hooks without worrying about lags. Value is in seconds."
     (switch-to-buffer-other-window lab--inspect-buffer-name)))
 
 (defun lab--plist-remove-keys-with-prefix (prefix lst)
-  "Return a copy of LST without the key-value pairs whose keys
-starts with PREFIX."
+  "Return a copy of LST without the key-value pairs whose keys starts with PREFIX."
   (seq-each
    (lambda (it) (setq lst (map-delete lst it)))
    (seq-filter
@@ -196,11 +212,12 @@ starts with PREFIX."
     (map-keys lst)))
   lst)
 
-(defun lab-length= (lst it)
+(defun lab--length= (lst it)
   (= (length lst) it))
 
 
-;;; Selection utilities
+;;; Utilities:
+
 ;; The discussion made here[1] was quite helpful for implementing the following functionality.
 ;; [1]: https://github.com/oantolin/embark/issues/495
 
@@ -272,11 +289,13 @@ metadata to each candidate, if given."
 (defun lab--extract-object-from-target (type target)
   (cons type (or (get-text-property 0 'lab--completing-read-object target) target)))
 
+(defvar embark-keymap-alist)
+(defvar embark-transformer-alist)
 (cl-defmacro lab--define-actions-for (category &key formatter keymap)
   (declare (indent 1))
   (let ((lab--generate-action-name
-         #'(lambda (category name &optional public?)
-             (intern (format "lab%s%s-%s" (if public? "-" "--") category (s-replace " " "-" (downcase name))))))
+         (lambda (category name &optional public?)
+           (intern (format "lab%s%s-%s" (if public? "-" "--") category (s-replace " " "-" (downcase name))))))
         (lab-keymap-full-name (intern (format "lab--embark-keymap-for-%s" category)))
         (lab-category-full-name (intern (format "lab-%s" category))))
     `(progn
@@ -342,6 +361,19 @@ metadata to each candidate, if given."
                             ',(mapcar (lambda (keydef) (nth 1 keydef)) keymap)))))
                 (action-fn (,lab--generate-action-name ',category action)))
            (funcall action-fn result))))))
+
+(defvar project-current-inhibit-prompt)
+(defvar project-current-directory-override)
+(defmacro lab--within-current-project (&rest forms)
+  "Lets you run FORMS in current projects directory."
+  `(let ((default-directory
+          (or
+           (when (boundp 'project-current-inhibit-prompt)
+             project-current-inhibit-prompt)
+           (when (boundp 'project-current-directory-override)
+             project-current-directory-override)
+           default-directory)))
+     ,@forms))
 
 
 ;;; Git helpers:
@@ -503,7 +535,7 @@ Examples:
                       `(("per_page" . ,lab-result-count)))
                   ,@(lab--plist-to-alist params)))
       (setq lastid
-            (when (and %collect-all? (lab-length= json lab--max-per-page-result-count))
+            (when (and %collect-all? (lab--length= json lab--max-per-page-result-count))
               (alist-get 'id (lab-last-item json)))))
     (if %collect-all? all-items json)))
 
@@ -512,7 +544,7 @@ Examples:
   (funcall lab-browse-url-fn url))
 
 
-;; Projects:
+;;; Projects:
 
 (lab--define-actions-for project
   :formatter #'lab--format-project-title
@@ -547,6 +579,7 @@ to given group. Result is memoized after first call for
   (interactive)
   (lab-project-act-on (lab-get-all-group-projects group)))
 
+;;;###autoload
 (defmemoize lab-get-all-owned-projects ()
   "Get all projects owned by you."
   (lab--request
@@ -568,31 +601,33 @@ to given group. Result is memoized after first call for
   "List all open MRs that belongs to PROJECT.
 If it's omitted, currently open project is used."
   (interactive)
-  (lab-merge-request-act-on
-   (lab--request
-    (format "projects/%s/merge_requests" (or project "#{project}"))
-    :scope 'all)
-   :sort? nil))
+  (lab--within-current-project
+   (lab-merge-request-act-on
+    (lab--request
+     (format "projects/%s/merge_requests" (or project "#{project}"))
+     :scope 'all)
+    :sort? nil)))
 
 ;;;###autoload
 (defun lab-get-project-pipelines (&optional project)
-  "Get pipelines for PROJECT. If PROJECT is nil, current git
-project is used."
+  "Get pipelines for PROJECT.
+If PROJECT is nil, current git project is used."
   (lab--request
    (format "projects/%s/pipelines" (or project "#{project}"))))
 
 ;;;###autoload
 (defun lab-list-project-pipelines (&optional project)
-  "List latest pipelines belonging to PROJECT. If PROJECT is nil,
-current git project is used."
+  "List latest pipelines belonging to PROJECT.
+If PROJECT is nil,current git project is used."
   (interactive)
-  (lab-pipeline-act-on
-   (lab--sort-by-latest-updated
-    (lab-get-project-pipelines project))
-   :sort? nil))
+  (lab--within-current-project
+   (lab-pipeline-act-on
+    (lab--sort-by-latest-updated
+     (lab-get-project-pipelines project))
+    :sort? nil)))
 
 
-;;; Pipelines
+;;; Pipelines:
 
 (lab--define-actions-for pipeline
   :formatter #'lab--format-pipeline
@@ -623,16 +658,18 @@ current git project is used."
 
 ;;;###autoload
 (defun lab-get-pipeline (project-id pipeline-id)
-  "Get detailed information about a single pipeline."
+  "Get detailed information for PIPELINE-ID in PROJECT-ID."
   (lab--request (format "projects/%s/pipelines/%s" project-id pipeline-id)))
 
 ;;;###autoload
 (defun lab-get-pipeline-jobs (project-id pipeline-id)
+  "Get latest jobs for PIPELINE-ID in PROJECT-ID."
   (lab--request
    (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)))
 
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
+  "List latest jobs for PIPELINE-ID in PROJECT-ID."
   (lab-job-act-on
    (lab-get-pipeline-jobs project-id pipeline-id)
    :sort? nil))
@@ -641,7 +678,8 @@ current git project is used."
 (defun lab-watch-pipeline (url &optional rerun?)
   "Start watching pipeline URL status.
 Send a notification if it's finished, failed or waiting for a
-manual action."
+manual action.  RERUN? is used to indicate that this is a
+recurring call, instead of a new watch request."
   (interactive "sPipeline URL: ")
   (let* ((data (s-match "https://.*\\.com/\\(.*\\)/-/pipelines/\\([0-9]+\\)" url))
          (project (nth 1 data))
@@ -658,13 +696,13 @@ manual action."
        (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
          (pcase .status
            ("success"
-            (alert (format "Pipeline FINISHED: %s/%s" project pipeline)))
+            (lab--alert (format "Pipeline FINISHED: %s/%s" project pipeline)))
            ("failed"
-            (alert (format "Pipeline FAILED: %s/%s" project pipeline)))
+            (lab--alert (format "Pipeline FAILED: %s/%s" project pipeline)))
            ((or "canceled" "skipped" "scheduled")
-            (alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
+            (lab--alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
            ("manual"
-            (alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
+            (lab--alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
             (when lab-should-open-pipeline-on-manual-action?
               (browse-url .web_url)))
            (_
@@ -703,18 +741,24 @@ manual action."
        (lab-watch-pipeline (alist-get 'web_url pipeline))))))
 
 
-;;; lab-trace-mode
+;;; lab-trace-mode:
 
 ;; TODO Add retry action for `lab-trace-mode-current-job' and start watching it
 ;; automatically
+
+(defvar-local lab-trace-mode-current-job nil)
+
+(defun lab-trace-mode-open-externally ()
+  "Open current log in external browser."
+  (interactive nil lab-trace-mode)
+  (lab--open-web-url (alist-get 'web_url lab-trace-mode-current-job)))
 
 (defvar-local lab-trace-mode-current-job nil
   "Currently inspected job object.")
 
 (defvar lab-trace-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "<f6>")
-      #'(lambda () (interactive) (lab--open-web-url (alist-get 'web_url lab-trace-mode-current-job))))
+    (define-key map (kbd "C-c o") #'lab-trace-mode-open-externally)
     map)
   "Keymap for `lab-trace-mode'.")
 
@@ -722,6 +766,7 @@ manual action."
   "Major mode for showing trace of a job.")
 
 (defun lab-show-job-logs (job)
+  "Show logs for JOB in a seperate buffer."
   (let-alist job
     (with-current-buffer (get-buffer-create (format "*lab-trace:%s-%s*" .id .name))
       (lab-trace-mode)
@@ -738,7 +783,7 @@ manual action."
       (switch-to-buffer-other-window (current-buffer)))))
 
 
-;;; Jobs
+;;; Jobs:
 
 (lab--define-actions-for job
   :formatter #'lab--format-job
@@ -766,15 +811,17 @@ manual action."
         (lab-get-job (lab--projid-for-job it) .id)))))
 
 (defun lab-get-job (project-id job-id)
-  "Get detailed information about a single job."
+  "Get detailed information for JOB-ID in PROJECT-ID."
   (lab--request (format "projects/%s/jobs/%s" project-id job-id)))
 
-(defun lab-act-on-last-failed-pipeline-job (&optional project)
+(defun lab-act-on-last-failed-pipeline-job (&optional project-id)
+  "List and act on last failed pipelines jobs for PROJECT.
+If PROJECT-ID is omitted, currently open project is used."
   (interactive)
   (let* ((failed?
           (lambda (it)
             (equal (downcase (alist-get 'status it)) "failed")))
-         (last-failed-pipeline (seq-find failed? (lab-get-project-pipelines (or project "#{project}")))))
+         (last-failed-pipeline (seq-find failed? (lab-get-project-pipelines (or project-id "#{project}")))))
     (if last-failed-pipeline
         (let-alist last-failed-pipeline
           (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
@@ -784,7 +831,7 @@ manual action."
       (user-error "Not a single failed pipeline, congrats :)"))))
 
 
-;;; Merge Requests
+;;; Merge Requests:
 
 (lab--define-actions-for merge-request
   :formatter #'lab--format-merge-request-title
@@ -817,13 +864,14 @@ manual action."
           :state 'opened))
         :sort? nil))
    (?w "Watch last pipeline"
-       (lab-watch-merge-request-latest-pipeline it))
+       (lab-watch-merge-request-last-pipeline it))
    (?i "Inspect"
        (lab--inspect-obj it))))
 
-(defun lab-get-merge-request-pipelines (project mr-id)
+(defun lab-get-merge-request-pipelines (project-id mr-id)
+  "Get last pipelines for MR-ID in PROJECT-ID."
   (lab--request
-   (format "projects/%s/merge_requests/%s/pipelines" project mr-id)))
+   (format "projects/%s/merge_requests/%s/pipelines" project-id mr-id)))
 
 (defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
@@ -865,20 +913,27 @@ If GROUP is omitted, `lab-group' is used."
      :state 'opened))
    :sort? nil))
 
-(defun lab-create-merge-request (&optional project)
+(defun lab--remove-diff-buffer ()
+  (when-let (buffer (get-buffer-window lab--diff-buffer-name))
+    (quit-window t buffer)))
+
+(declare-function markdown-mode "markdown-mode")
+(defun lab-create-merge-request ()
   "Create an MR interactively for current git project."
   (interactive)
-  (let ((currbuf (current-buffer))
-        (source-branch (completing-read
-                        "Source branch: "
-                        (vc-git-branches)
-                        nil nil (lab-git-current-branch)))
-        (target-branch (completing-read
-                        "Target branch: "
-                        (vc-git-branches)
-                        nil nil lab-main-branch-name))
-        (title (read-string "MR Title: "
-                            (s-trim (shell-command-to-string "git log -1 --pretty=%B")))))
+  (let* ((currbuf (current-buffer))
+         (branches (vc-git-branches))
+         (source-branch (completing-read
+                         "Source branch: "
+                         branches
+                         nil nil (lab-git-current-branch)))
+         (target-branch (completing-read
+                         "Target branch: "
+                         branches
+                         nil nil (when (member lab-main-branch-name branches)
+                                   lab-main-branch-name)))
+         (title (read-string "MR Title: "
+                             (s-trim (shell-command-to-string "git log -1 --pretty=%B")))))
     (lab--user-input
      :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
      :init (thread-last
@@ -896,16 +951,18 @@ If GROUP is omitted, `lab-group' is used."
              (s-append "\n---\n\n"))
      :parser #'lab--parse-merge-request-buffer
      :on-start
-     (lambda () (when (require 'magit nil t)
-             (magit-diff-range (format "%s..%s" target-branch source-branch))))
+     (lambda ()
+       (vc-diff-internal t (vc-deduce-fileset t) target-branch source-branch t lab--diff-buffer-name))
+     :on-reject #'lab--remove-diff-buffer
      :on-accept
      (lambda (_ data)
        (with-current-buffer currbuf
          (let ((result
                 (lab--request
-                 (format "projects/%s/merge_requests" (or project "#{project}"))
+                 "projects/#{project}/merge_requests"
                  :%type "POST"
                  :%data data)))
+           (lab--remove-diff-buffer)
            (seq-each
             (lambda (it) (funcall it result))
             lab-after-merge-requests-create-functions)
@@ -922,10 +979,10 @@ If GROUP is omitted, `lab-group' is used."
                         yaml
                         (s-split "\n")
                         (mapcar (lambda (it) (mapcar #'s-trim (s-split-up-to ": " it 1))))
-                        (seq-filter (lambda (it) (and (lab-length= it 2)
-                                                 (not (s-blank? (car it))))))
+                        (seq-filter (lambda (it) (and (lab--length= it 2)
+                                                      (not (s-blank? (car it))))))
                         (mapcar (lambda (it) (list (intern (concat ":" (car it)))
-                                              (lab--deserialize-yaml-value (cadr it)))))
+                                                   (lab--deserialize-yaml-value (cadr it)))))
                         (apply #'seq-concatenate 'list)))))
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
@@ -1022,6 +1079,12 @@ If GROUP is omitted, `lab-group' is used."
 
 (defun lab--projid-for-job (job)
   (or (alist-get 'project_id job) (alist-get 'project_id (alist-get 'pipeline job))))
+
+(declare-function alert "alert")
+(defun lab--alert (msg)
+  (message ">> lab.el :: %s" msg)
+  (when (require 'alert nil t)
+    (alert msg :title "lab.el")))
 
 (provide 'lab)
 
