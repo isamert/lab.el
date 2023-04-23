@@ -48,12 +48,16 @@
 
 ;; Customization:
 
+(defgroup lab nil
+  "An interface for GitLab."
+  :group 'tools
+  :prefix "lab-")
+
 (defcustom lab-token
   nil
   "GitLab API token."
   :type 'string
-  :group 'lab
-  :prefix "lab-")
+  :group 'lab)
 
 (defcustom lab-host
   "https://gitlab.com"
@@ -605,9 +609,9 @@ first call for `memoize-default-timeout'."
 ;;;###autoload
 (defun lab-list-all-owned-projects ()
   "Get all projects owned by you.
-  BE CAREFUL, this function tries to fetch all functions belonging
-  to given group. Result is memoized after first call for
-  `memoize-default-timeout'."
+BE CAREFUL, this function tries to fetch all functions belonging
+to given group. Result is memoized after first call for
+`memoize-default-timeout'."
   (interactive)
   (lab-project-act-on (lab-get-all-owned-projects)))
 
