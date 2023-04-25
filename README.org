@@ -25,12 +25,10 @@ You can also use =use-package=
 #+begin_src elisp
   ;; with straight:
   (use-package lab
-    :ensure t
     :straight (:host github :repo "isamert/lab.el"))
 
   ;; with quelpa:
   (use-package lab
-    :ensure t
     :quelpa (lab :fetcher github :repo "isamert/lab.el"))
 #+end_src
 
