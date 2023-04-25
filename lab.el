@@ -777,7 +777,7 @@ recurring call, instead of a new watch request."
 
 (defvar lab-trace-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c o") #'lab-trace-mode-open-externally)
+    (define-key map (kbd "C-c &") #'lab-trace-mode-open-externally)
     map)
   "Keymap for `lab-trace-mode'.")
 
