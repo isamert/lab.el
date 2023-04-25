@@ -167,10 +167,7 @@ hooks without worrying about lags.  Value is in seconds."
 (defvar lab--pipeline-watcher-debounce-time 30)
 
 (defconst lab--max-per-page-result-count 100
-  "This is the hard limit set by GitLab.
-lab.el does not support pagination because I didn't need to deal
-with stuff more than this limit.  If you are having issues with
-this limit, please let me know.")
+  "This is the hard limit set by GitLab.")
 
 (defconst lab--regex-yaml-metadata-border
   "\\(-\\{3\\}\\)$"
