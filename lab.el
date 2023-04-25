@@ -598,7 +598,6 @@ first call for `memoize-default-timeout'."
   (interactive)
   (lab-project-act-on (lab-get-all-group-projects group)))
 
-;;;###autoload
 (defmemoize lab-get-all-owned-projects ()
   "Get all projects owned by you."
   (lab--request
