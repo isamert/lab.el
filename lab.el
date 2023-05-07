@@ -340,18 +340,18 @@ function is called if given and the buffer is simply killed."
               keymap)
            map)
          ,(format "Actions for %s" lab-category-full-name))
-       (add-to-list
-        'embark-keymap-alist
-        '(,lab-category-full-name . ,lab-keymap-full-name))
 
-       ;; Also define a embark transformer for these actions. That's
-       ;; because we want to pass full objects to the actions instead
-       ;; of passing selected string. Objects are attached to the
-       ;; text-properties by `lab--completing-read-object'
-       ;; function. This extractor simply extracts it.
-       (setf
-        (alist-get ',lab-category-full-name embark-transformer-alist)
-        #'lab--extract-object-from-target)
+       (with-eval-after-load 'embark
+         (add-to-list 'embark-keymap-alist '(,lab-category-full-name . ,lab-keymap-full-name))
+
+         ;; Also define a embark transformer for these actions. That's
+         ;; because we want to pass full objects to the actions instead
+         ;; of passing selected string. Objects are attached to the
+         ;; text-properties by `lab--completing-read-object'
+         ;; function. This extractor simply extracts it.
+         (setf
+          (alist-get ',lab-category-full-name embark-transformer-alist)
+          #'lab--extract-object-from-target))
 
        ;; Generate the `...-act' function which let's user select one
        ;; of the inputs and act on them
@@ -606,7 +606,7 @@ first call for `memoize-default-timeout'."
 (defun lab-list-all-owned-projects ()
   "Get all projects owned by you.
 BE CAREFUL, this function tries to fetch all functions belonging
-to given group. Result is memoized after first call for
+to given group.  Result is memoized after first call for
 `memoize-default-timeout'."
   (interactive)
   (lab-project-act-on (lab-get-all-owned-projects)))
