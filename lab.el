@@ -319,7 +319,7 @@ function is called if given and the buffer is simply killed."
   (declare (indent 1))
   (let ((lab--generate-action-name
          (lambda (category name &optional public?)
-           (intern (format "lab%s%s-%s" (if public? "-" "--") category (s-replace " " "-" (downcase name))))))
+           (intern (format "lab%s%s-%s" (if public? "-" "--") category (string-replace " " "-" (downcase name))))))
         (lab-keymap-full-name (intern (format "lab--embark-keymap-for-%s" category)))
         (lab-category-full-name (intern (format "lab-%s" category))))
     `(progn
