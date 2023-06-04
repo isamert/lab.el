@@ -363,14 +363,9 @@ function is called if given and the buffer is simply killed."
 
        ;; Generate the `...-act' function which let's user select one
        ;; of the inputs and act on them
-       (cl-defun ,(funcall lab--generate-action-name category "act-on" t) (items &key (sort? t))
-         (let* ((result (lab--completing-read-object
-                         (format "%s: " (s-titleize (format "%s" ',category)))
-                         items
-                         :formatter ,formatter
-                         :category ',lab-category-full-name
-                         :sort? sort?))
-                (action (pcase lab-action-handler
+       ;; TODO make interactive?
+       (cl-defun ,(funcall lab--generate-action-name category "act-on" t) (item)
+         (let* ((action (pcase lab-action-handler
                           ('read-multiple-choice
                            (nth 1 (read-multiple-choice
                                    lab--action-selection-title
@@ -384,7 +379,16 @@ function is called if given and the buffer is simply killed."
                             lab--action-selection-title
                             ',(mapcar (lambda (keydef) (nth 1 keydef)) keymap)))))
                 (action-fn (,lab--generate-action-name ',category action)))
-           (funcall action-fn result))))))
+           (funcall action-fn item)))
+
+       (cl-defun ,(funcall lab--generate-action-name category "select-and-act-on" t) (items &key (sort? t))
+         (let* ((result (lab--completing-read-object
+                         (format "%s: " (s-titleize (format "%s" ',category)))
+                         items
+                         :formatter ,formatter
+                         :category ',lab-category-full-name
+                         :sort? sort?)))
+           (funcall #',(funcall lab--generate-action-name category "act-on" t) result))))))
 
 (defvar project-current-inhibit-prompt)
 (defvar project-current-directory-override)
@@ -611,7 +615,7 @@ See `lab-group'.  BE CAREFUL, this function tries to fetch all
 functions belonging to given group.  Result is memoized after
 first call for `memoize-default-timeout'."
   (interactive)
-  (lab-project-act-on (lab-get-all-group-projects group)))
+  (lab-project-select-and-act-on (lab-get-all-group-projects group)))
 
 (defmemoize lab-get-all-owned-projects ()
   "Get all projects owned by you."
@@ -627,7 +631,7 @@ BE CAREFUL, this function tries to fetch all functions belonging
 to given group.  Result is memoized after first call for
 `memoize-default-timeout'."
   (interactive)
-  (lab-project-act-on (lab-get-all-owned-projects)))
+  (lab-project-select-and-act-on (lab-get-all-owned-projects)))
 
 ;;;###autoload
 (defun lab-list-project-merge-requests (&optional project)
@@ -635,7 +639,7 @@ to given group.  Result is memoized after first call for
 If it's omitted, currently open project is used."
   (interactive)
   (lab--within-current-project
-   (lab-merge-request-act-on
+   (lab-merge-request-select-and-act-on
     (lab--request
      (format "projects/%s/merge_requests" (or project "#{project}"))
      :scope 'all)
@@ -654,7 +658,7 @@ If PROJECT is nil, current git project is used."
 If PROJECT is nil,current git project is used."
   (interactive)
   (lab--within-current-project
-   (lab-pipeline-act-on
+   (lab-pipeline-select-and-act-on
     (lab--sort-by-latest-updated
      (lab-get-project-pipelines project))
     :sort? nil)))
@@ -703,7 +707,7 @@ If PROJECT is nil,current git project is used."
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
   "List latest jobs for PIPELINE-ID in PROJECT-ID."
-  (lab-job-act-on
+  (lab-job-select-and-act-on
    (lab-get-pipeline-jobs project-id pipeline-id)
    :sort? nil))
 
@@ -859,7 +863,7 @@ If PROJECT-ID is omitted, currently open project is used."
         (let-alist last-failed-pipeline
           (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
             (if (and jobs (> (length jobs) 0))
-                (lab-job-act-on jobs :sort? nil)
+                (lab-job-select-and-act-on jobs :sort? nil)
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
@@ -889,7 +893,7 @@ If PROJECT-ID is omitted, currently open project is used."
         (format "projects/%s/merge_requests/%s/rebase" .project_id .iid)
         :%type "PUT"))
    (?p "Pipelines"
-       (lab-pipeline-act-on
+       (lab-pipeline-select-and-act-on
         (lab--sort-by-latest-updated
          (lab--request
           (format "projects/%s/merge_requests/%s/pipelines" .project_id .iid)
@@ -909,7 +913,7 @@ If PROJECT-ID is omitted, currently open project is used."
 (defun lab-list-branch-merge-requests ()
   "List all open MRs that the source branch is the current branch."
   (interactive)
-  (lab-merge-request-act-on
+  (lab-merge-request-select-and-act-on
    (lab--sort-by-latest-updated
     (lab--request
      "projects/#{project}/merge_requests"
@@ -922,7 +926,7 @@ If PROJECT-ID is omitted, currently open project is used."
   "List all of your currently open merge requests.
 `Your' means either it's created by you or assigned to you."
   (interactive)
-  (lab-merge-request-act-on
+  (lab-merge-request-select-and-act-on
    (lab--sort-by-latest-updated
     `(,@(lab--request
          "merge_requests"
@@ -938,7 +942,7 @@ If PROJECT-ID is omitted, currently open project is used."
   "List all open MRs that belongs to GROUP.
 If GROUP is omitted, `lab-group' is used."
   (interactive)
-  (lab-merge-request-act-on
+  (lab-merge-request-select-and-act-on
    (lab--sort-by-latest-updated
     (lab--request
      (format "groups/%s/merge_requests" (or group "#{group}"))
