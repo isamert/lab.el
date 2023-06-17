@@ -84,6 +84,14 @@ Required only for functions containing `-group-' phrase."
   :type 'hook
   :group 'lab)
 
+(defcustom lab-after-git-clone-functions
+  '()
+  "Functions to run after a repository is cloned.
+The `default-directory' will be the project's directory while
+calling these functions."
+  :type 'hook
+  :group 'lab)
+
 (defcustom lab-browse-url-fn
   #'browse-url
   "Function to open external links."
@@ -440,18 +448,28 @@ function is called if given and the buffer is simply killed."
 
 ;;;###autoload
 (defun lab-git-clone (url dir)
-  "Clone URL to DIR."
+  "Clone URL to DIR.
+DIR will be the parent directory of the repo you've just cloned.
+You can think this as simple \"git clone URL\" call in DIR.
+
+Also see `lab-after-git-clone-functions'."
   (interactive
    (list
     (read-string "URL: ")
-    (read-directory-name "Directory to clone in: " "~/Workspace/")))
+    (read-directory-name "Directory to clone in: " lab-projects-directory)))
   (let* ((default-directory dir)
-         (proc (start-process-shell-command "*lab-clone*" "*lab-clone*" (format "git clone '%s'" url))))
+         (proc (start-process-shell-command "*lab-clone*" "*lab-clone*" (format "git clone --quiet '%s'" url))))
     (set-process-sentinel
      proc
      (lambda (p _e)
        (if (= 0 (process-exit-status p))
-           (message "%s cloned." url)
+           (let* ((repo-name (file-name-base url))
+                  (default-directory (concat (string-trim-right dir "/") "/" repo-name)))
+             (message "%s is cloned." repo-name)
+             (when (and (not (file-exists-p default-directory))
+                        (not (eq lab-after-git-clone-functions nil)))
+               (error "Can't find the cloned repository at %s, unable to run hooks" default-directory))
+             (seq-each #'funcall lab-after-git-clone-functions))
          (message "Cloning %s is failed." url))))))
 
 ;;;###autoload
