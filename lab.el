@@ -507,7 +507,7 @@ project."
 (cl-defun lab--request
     (endpoint
      &rest params
-     &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil) (%raw? nil)
+     &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil) (%raw? nil) %async %success
      &allow-other-keys)
   "Do a GitLab request.
 
@@ -538,29 +538,31 @@ Examples:
   ;; url parameters
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
 
-  (let (json
-        (all-items '())
-        (lastid t)
-        (json-object-type 'alist)
-        (json-array-type #'list)
-        (json-key-type 'symbol))
+  (let (json (all-items '()) (lastid t))
     (while lastid
       (request
         (thread-last (format "%s/api/v4/%s" lab-host endpoint)
-                     (s-replace "#{group}" (url-hexify-string lab-group))
-                     (s-replace "#{project}" (lab--project-path)))
+           (s-replace "#{group}" (url-hexify-string lab-group))
+           (s-replace "#{project}" (lab--project-path)))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
-        :parser (if %raw? #'buffer-string #'json-read)
+        :parser (if %raw?
+                    #'buffer-string
+                  (apply-partially
+                   #'json-parse-buffer
+                   :object-type #'alist :array-type #'list))
         :success (cl-function
                   (lambda (&key data &allow-other-keys)
-                    (setq json data)
-                    (when %collect-all?
-                      (setq all-items `(,@all-items ,@json)))))
+                    (unless %async
+                      (setq json data)
+                      (when %collect-all?
+                        (setq all-items `(,@all-items ,@json))))
+                    (when %success
+                      (funcall %success data))))
         :error (cl-function
                 (lambda (&key data &allow-other-keys)
                   (error ">> lab--request failed with %s" data)))
-        :sync t
+        :sync (not %async)
         :data (lab--plist-to-alist %data)
         :params `(,@(when %collect-all?
                       `(("per_page" . ,lab--max-per-page-result-count)
