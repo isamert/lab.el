@@ -183,6 +183,8 @@ hooks without worrying about lags.  Value is in seconds."
 
 (defconst lab--diff-buffer-name "*lab-diff*")
 
+(defconst lab--clone-buffer-name "*lab-clone*")
+
 
 ;;; Elisp helpers:
 
@@ -451,7 +453,7 @@ function is called if given and the buffer is simply killed."
 ;;; Git helpers (interactive):
 
 ;;;###autoload
-(defun lab-git-clone (url dir)
+(defun lab-git-clone (url dir &optional callback)
   "Clone URL to DIR.
 DIR will be the parent directory of the repo you've just cloned.
 You can think this as simple \"git clone URL\" call in DIR.
@@ -462,19 +464,34 @@ Also see `lab-after-git-clone-functions'."
     (read-string "URL: ")
     (read-directory-name "Directory to clone in: " lab-projects-directory)))
   (let* ((default-directory dir)
-         (proc (start-process-shell-command "*lab-clone*" "*lab-clone*" (format "git clone --quiet '%s'" url))))
+         (proc (start-process-shell-command "*lab-clone*" lab--clone-buffer-name (format "git clone --quiet '%s'" url))))
+    (with-current-buffer lab--clone-buffer-name
+      (goto-char (point-max))
+      (insert (format ">> Cloning %s to %s...\n" url dir)))
     (set-process-sentinel
      proc
      (lambda (p _e)
        (if (= 0 (process-exit-status p))
            (let* ((repo-name (file-name-base url))
                   (default-directory (concat (string-trim-right dir "/") "/" repo-name)))
-             (message "%s is cloned." repo-name)
-             (when (and (not (file-exists-p default-directory))
-                        (not (eq lab-after-git-clone-functions nil)))
-               (error "Can't find the cloned repository at %s, unable to run hooks" default-directory))
-             (seq-each #'funcall lab-after-git-clone-functions))
-         (message "Cloning %s is failed." url))))))
+             (when callback
+               (funcall callback t)
+               (with-current-buffer lab--clone-buffer-name
+                 (goto-char (point-max))
+                 (insert (format ">> Cloning %s to %s...Done\n" url dir))))
+             (unless callback
+               (message "%s is cloned." repo-name)
+               (when (and (not (file-exists-p default-directory))
+                          (not (eq lab-after-git-clone-functions nil)))
+                 (error "Can't find the cloned repository at %s, unable to run hooks" default-directory))
+               (seq-each #'funcall lab-after-git-clone-functions)))
+         (if callback
+             (progn
+               (with-current-buffer lab--clone-buffer-name
+                 (goto-char (point-max))
+                 (insert (format ">> Cloning %s to %s...Failed!\n" url dir)))
+               (funcall callback nil))
+           (message "Cloning %s is failed." url)))))))
 
 ;;;###autoload
 (defun lab-git-origin-switch-to-ssh ()
@@ -487,6 +504,36 @@ Also see `lab-after-git-clone-functions'."
         (shell-command-to-string (format "git remote set-url origin '%s'" ssh-origin))
         (message "Switched to SSH!"))
     (user-error "Already using SSH method or something is wrong with the current upstream address!")))
+
+;; Test
+;; (let* ((root "~/Workspace/projects")
+;;        (groupped (--group-by
+;;                   (let-alist it (f-exists? (f-join root .path_with_namespace)))
+;;                   (lab-get-all-group-projects)))
+;;        (existing (alist-get t groupped))
+;;        (new (alist-get nil groupped)))
+;;   (lab--clone-all root (-take 5 new)))
+
+;; TODO: Ask for group interactively
+(defun lab-clone-all (root repos)
+  (if-let ((current (car repos)))
+      (let-alist current
+        (let* ((path (f-join root .path_with_namespace))
+               (project-parent (f-dirname path)))
+          (mkdir project-parent t)
+          (message "lab :: Cloning %s..." path)
+          (lab-git-clone
+           (alist-get (lab--clone-url-path-selector) current)
+           project-parent
+           (lambda (success?)
+             (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
+             (lab--clone-all root (-drop 1 repos))))))
+    (message "lab :: Cloned all repositories. Check buffer *lab-clone* for details.")))
+
+;; TODO: like lab-clone-all but fetches and pulls existing repositories
+(defun lab-fetch-all ()
+  ""
+  )
 
 
 ;;; Core:
