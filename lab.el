@@ -163,6 +163,12 @@ hooks without worrying about lags.  Value is in seconds."
   :type 'number
   :group 'lab)
 
+(defcustom lab-pipeline-watcher-debounce-time 30
+  "Pipeline status is checked by polling.
+This is the duration between calls, in seconds."
+  :type 'number
+  :group 'lab)
+
 
 ;;; Internal variables/constants:
 
@@ -171,8 +177,6 @@ hooks without worrying about lags.  Value is in seconds."
 
 (defvar lab--action-selection-title "Action: "
   "The text displayed on action selection menus.")
-
-(defvar lab--pipeline-watcher-debounce-time 30)
 
 (defconst lab--max-per-page-result-count 100
   "This is the hard limit set by GitLab.")
@@ -776,7 +780,7 @@ recurring call, instead of a new watch request."
     (unless rerun?
       (message ">> Started watching pipeline %s on %s!" pipeline project))
     (run-with-timer
-     (if rerun? lab--pipeline-watcher-debounce-time 1)
+     (if rerun? lab-pipeline-watcher-debounce-time 1)
      nil
      (lambda ()
        (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
