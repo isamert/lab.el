@@ -134,9 +134,10 @@ selection."
   :group 'lab)
 
 (defcustom lab-main-branch-name
-  "main"
+  '("main" "master")
   "Default main branch name used in your projects, like \"main\", \"master\" etc.
-Mostly used for convenience-related stuff.."
+It also can be a list, like \\='(\"main\" \"master\") (which is the default).
+ Mostly used for convenience-related stuff."
   :type 'string
   :group 'lab)
 
@@ -169,6 +170,13 @@ This is the duration between calls, in seconds."
   :type 'number
   :group 'lab)
 
+(defcustom lab-git-pull-options '("--quiet" "--stat")
+  "\"git pull\" options used by `lab-git-pull'.
+Example:
+  \\='(\"--quiet\" \"--all\" \"--tags\" \"--prune\" \"--rebase\" \"--autostash\")"
+  :type 'string
+  :group 'lab)
+
 
 ;;; Internal variables/constants:
 
@@ -188,6 +196,9 @@ This is the duration between calls, in seconds."
 (defconst lab--diff-buffer-name "*lab-diff*")
 
 (defconst lab--clone-buffer-name "*lab-clone*")
+
+(defconst lab--pull-buffer-name "*lab-pull*")
+
 
 
 ;;; Elisp helpers:
@@ -401,13 +412,35 @@ function is called if given and the buffer is simply killed."
 (defmacro lab--within-current-project (&rest forms)
   "Let you run FORMS in current projects directory."
   `(let ((default-directory
-          (or
-           (when (boundp 'project-current-inhibit-prompt)
-             project-current-inhibit-prompt)
-           (when (boundp 'project-current-directory-override)
-             project-current-directory-override)
-           default-directory)))
+           (or
+            (when (boundp 'project-current-inhibit-prompt)
+              project-current-inhibit-prompt)
+            (when (boundp 'project-current-directory-override)
+              project-current-directory-override)
+            default-directory)))
      ,@forms))
+
+(defun lab--find-all-repositories-under (path)
+  "Find all repositories under the given PATH.
+A git repository is defined as a directory that contain a
+\".git\" sub-directory."
+  (thread-last
+    path
+    expand-file-name
+    (format "find %s -type d -name '.git' -maxdepth 5")
+    shell-command-to-string
+    s-trim
+    (s-split "\n")
+    (mapcar (lambda (it) (string-remove-suffix "/.git" it)))))
+
+(defun lab--path-join (p1 &rest rest)
+  "Join P1 and REST into a single path.
+
+>> (lab--path-join \"/home/isa\" \"x/y\" \"z.json\")
+=> \"/home/isa/x/y/z.json\"
+>> (lab--path-join \"/home/isa/\" \"x/y/\" \"z.json\")
+=> \"/home/isa/x/y/z.json\""
+  (seq-reduce (lambda (acc it) (concat acc "/" (string-remove-suffix "/" it))) rest (string-remove-suffix "/" p1)))
 
 
 ;;; Git helpers:
@@ -457,10 +490,25 @@ function is called if given and the buffer is simply killed."
 ;;; Git helpers (interactive):
 
 ;;;###autoload
+(defun lab-git-origin-switch-to-ssh ()
+  "Switch remote origin address to SSH from HTTPS."
+  (interactive)
+  (if-let* ((https-origin (s-trim (shell-command-to-string "git config --get remote.origin.url")))
+            (it (s-match "https://\\(.*\\)\\.\\(com\\|net\\|org\\)/\\(.*\\)" https-origin))
+            (ssh-origin (format "git@%s.%s:%s" (nth 1 it) (nth 2 it) (nth 3 it))))
+      (progn
+        (shell-command-to-string (format "git remote set-url origin '%s'" ssh-origin))
+        (message "Switched to SSH!"))
+    (user-error "Already using SSH method or something is wrong with the current upstream address!")))
+
+;;;###autoload
 (defun lab-git-clone (url dir &optional callback)
   "Clone URL to DIR.
 DIR will be the parent directory of the repo you've just cloned.
 You can think this as simple \"git clone URL\" call in DIR.
+
+CALLBACK is called with either t or nil, indicating success
+status.
 
 Also see `lab-after-git-clone-functions'."
   (interactive
@@ -498,46 +546,103 @@ Also see `lab-after-git-clone-functions'."
            (message "Cloning %s is failed." url)))))))
 
 ;;;###autoload
-(defun lab-git-origin-switch-to-ssh ()
-  "Switch remote origin address to SSH from HTTPS."
+(defun lab-git-pull (&optional path callback)
+  "Simply run \"git pull\" on PATH.
+If PATH is nil, `default-directory' is assumed.  CALLBACK is
+called with either t or nil, indicating success status.
+
+Also see `lab-git-pull-options'."
   (interactive)
-  (if-let* ((https-origin (s-trim (shell-command-to-string "git config --get remote.origin.url")))
-            (it (s-match "https://\\(.*\\)\\.\\(com\\|net\\|org\\)/\\(.*\\)" https-origin))
-            (ssh-origin (format "git@%s.%s:%s" (nth 1 it) (nth 2 it) (nth 3 it))))
+  (setq path (or path default-directory))
+  (let ((default-directory path)
+        (interactive? (called-interactively-p 'interactive)))
+    (with-current-buffer (get-buffer-create lab--pull-buffer-name)
+      (goto-char (point-max))
+      (let ((msg (format ">> Pulling %s...\n" path)))
+        (insert msg)
+        (when interactive?
+          (message msg)
+          (switch-to-buffer-other-window lab--pull-buffer-name))))
+    (set-process-sentinel
+     (start-process-shell-command
+      "*lab-pull*" lab--pull-buffer-name
+      (format "git pull %s" lab-git-pull-options))
+     (lambda (p _e)
+       (let ((success? (= 0 (process-exit-status p))))
+         (with-current-buffer lab--pull-buffer-name
+           (let ((msg (format ">> Pulling %s...%s.\n" path (if success? "Done" "Failed"))))
+             (insert msg)
+             (when interactive?
+               (message msg))))
+         (when callback
+           (funcall callback success?)))))))
+
+;; TODO: automatically switch to master branch if requested. while
+;; switching, stash first if dirty?
+;;;###autoload
+(defun lab-pull-bulk (&optional repositories)
+  "Pull all REPOSITORIES.
+REPOSITORIES is a list of paths to different repositories.  When
+called interactively, it asks you for a path (also see
+`lab-projects-directory'), finds all git repositories under that
+directory and pulls them using `lab-git-pull'.
+
+It is recommended to have \"--autostash\" present in your
+`lab-git-pull-options' so that you can pull even if repo is in
+dirty state."
+  (interactive
+   (list (lab--find-all-repositories-under (read-directory-name "Path: " lab-projects-directory))))
+  (if-let ((current (car repositories)))
       (progn
-        (shell-command-to-string (format "git remote set-url origin '%s'" ssh-origin))
-        (message "Switched to SSH!"))
-    (user-error "Already using SSH method or something is wrong with the current upstream address!")))
+        (message "lab :: Pulling %s..." current)
+        (lab-git-pull
+         current
+         (lambda (success?)
+           (message "lab :: Pulling %s...%s" current (if success? "Done" "Failed!"))
+           (lab-pull-bulk (seq-drop repositories 1)))))
+    (message "lab :: Pulled all repositories. Check buffer *lab-pull* for details.")))
 
-;; Test
-;; (let* ((root "~/Workspace/projects")
-;;        (groupped (--group-by
-;;                   (let-alist it (f-exists? (f-join root .path_with_namespace)))
-;;                   (lab-get-all-group-projects)))
-;;        (existing (alist-get t groupped))
-;;        (new (alist-get nil groupped)))
-;;   (lab--clone-all root (-take 5 new)))
+;; TODO: Pull existing repositories with: (lab-pull-bulk existing root)?
+;;;###autoload
+(defun lab-clone-bulk (root repositories)
+  "Clone all REPOSITORIES to ROOT directory.
+REPOSITORIES is a list containing repository alists in the form of
 
-;; TODO: Ask for group interactively
-(defun lab-clone-all (root repos)
-  (if-let ((current (car repos)))
-      (let-alist current
-        (let* ((path (f-join root .path_with_namespace))
-               (project-parent (f-dirname path)))
-          (mkdir project-parent t)
-          (message "lab :: Cloning %s..." path)
-          (lab-git-clone
-           (alist-get (lab--clone-url-path-selector) current)
-           project-parent
-           (lambda (success?)
-             (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
-             (lab--clone-all root (-drop 1 repos))))))
-    (message "lab :: Cloned all repositories. Check buffer *lab-clone* for details.")))
+  \\='((path_with_namespace . \"group/subgroup/.../project_name\")
+    (ssh_url_to_repo . \"ssh://...\")
+    (https_url_to_repo . \"ssh://...\"))
 
-;; TODO: like lab-clone-all but fetches and pulls existing repositories
-(defun lab-fetch-all ()
-  ""
-  )
+This is typically returned by GitLab API.  Each project is cloned
+under \"ROOT/path_with_namespace\", so it replicates the same
+project hierarchy in GitLab in your local path ROOT.
+
+If the inferred path for a project already exist in the
+filesystem, that project will be simply skipped.
+
+When called interactively, it asks for a path to clone projects
+in (also see `lab-projects-directory') and also asks for a GitLab
+group path to fetch all projects of (also see `lab-group')."
+  (interactive
+   (let* ((root (read-directory-name "Path to clone projects in: " lab-projects-directory))
+          (groupped (seq-group-by
+                     (lambda (it) (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
+                     (lab-get-all-group-projects
+                      (read-string "Enter GitLab group path to clone all projects from: " lab-group))))
+          ;; (existing (alist-get t groupped))
+          (new (alist-get nil groupped)))
+     (list root new)))
+  (if-let ((current (car repositories)))
+      (let* ((path (lab--path-join root (alist-get 'path_with_namespace current)))
+             (project-parent (f-dirname path)))
+        (mkdir project-parent t)
+        (message "lab :: Cloning %s..." path)
+        (lab-git-clone
+         (alist-get (lab--clone-url-path-selector) current)
+         project-parent
+         (lambda (success?)
+           (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
+           (lab-clone-bulk root (seq-drop repositories 1)))))
+    (message "lab :: Cloned all repositories. Check buffer %s for details." lab--clone-buffer-name)))
 
 
 ;;; Core:
@@ -601,7 +706,7 @@ Examples:
                     #'buffer-string
                   (apply-partially
                    #'json-parse-buffer
-                   :object-type #'alist :array-type #'list))
+                   :object-type 'alist :array-type 'list))
         :success (cl-function
                   (lambda (&key data &allow-other-keys)
                     (unless %async
@@ -656,7 +761,7 @@ Examples:
 (defmemoize lab-get-all-group-projects (&optional group)
   "Get all groups belonging to given group."
   (lab--request
-   (format "groups/%s/projects" (or group "#{group}"))
+   (format "groups/%s/projects" (or (when group (url-hexify-string group)) "#{group}"))
    :with_shared 'false
    :include_subgroups 'true
    :%collect-all? t))
@@ -998,7 +1103,7 @@ If GROUP is omitted, `lab-group' is used."
   (lab-merge-request-select-and-act-on
    (lab--sort-by-latest-updated
     (lab--request
-     (format "groups/%s/merge_requests" (or group "#{group}"))
+     (format "groups/%s/merge_requests" (or (when group (url-hexify-string group)) "#{group}"))
      :scope 'all
      :state 'opened))
    :sort? nil))
@@ -1006,6 +1111,15 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--remove-diff-buffer ()
   (when-let (buffer (get-buffer-window lab--diff-buffer-name))
     (quit-window t buffer)))
+
+(defun lab--find-main-branch ()
+  "Find the main branch for current repository.
+Main branch is one the branch names listed in `lab-main-branch-name'."
+  (seq-find
+   (lambda (it) (member it (vc-git-branches)))
+   (if (stringp lab-main-branch-name)
+       (list lab-main-branch-name)
+     lab-main-branch-name)))
 
 (declare-function markdown-mode "markdown-mode")
 (defun lab-create-merge-request ()
@@ -1020,8 +1134,8 @@ If GROUP is omitted, `lab-group' is used."
          (target-branch (completing-read
                          "Target branch: "
                          branches
-                         nil nil (when (member lab-main-branch-name branches)
-                                   lab-main-branch-name)))
+                         nil nil
+                         (lab--find-main-branch)))
          (title (read-string "MR Title: "
                              (s-trim (shell-command-to-string "git log -1 --pretty=%B")))))
     (lab--user-input
