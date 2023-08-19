@@ -170,6 +170,11 @@ This is the duration between calls, in seconds."
   :type 'number
   :group 'lab)
 
+(defcustom lab-pipeline-automatically-watch-after-retry t
+  "Whether to start watching pipeline after retrying a pipeline job."
+  :type 'number
+  :group 'lab)
+
 (defcustom lab-git-pull-options '("--quiet" "--stat")
   "\"git pull\" options used by `lab-git-pull'.
 Example:
@@ -833,7 +838,9 @@ If PROJECT is nil,current git project is used."
    (?r "Retry"
        (lab--request
         (format "projects/%s/pipelines/%s/retry" .project_id .id)
-        :%type "POST"))
+        :%type "POST")
+       (when lab-pipeline-automatically-watch-after-retry
+         (lab-watch-pipeline .web_url)))
    (?c "Cancel"
        (lab--request
         (format "projects/%s/pipelines/%s/cancel" .project_id .id)
