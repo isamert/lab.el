@@ -515,6 +515,7 @@ Also see `lab-after-git-clone-functions'."
    (list
     (read-string "URL: ")
     (read-directory-name "Directory to clone in: " lab-projects-directory)))
+  (make-directory dir t)
   (let* ((default-directory dir)
          (proc (start-process-shell-command "*lab-clone*" lab--clone-buffer-name (format "git clone --quiet '%s'" url))))
     (with-current-buffer lab--clone-buffer-name
