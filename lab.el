@@ -6,7 +6,7 @@
 ;; Version: 1.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0"))
+;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@
 (require 's)
 (require 'pp)
 (require 'vc)
+(require 'f)
 (require 'vc-git)
 (require 'request)
 (require 'memoize)
