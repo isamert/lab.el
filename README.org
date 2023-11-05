@@ -1,5 +1,7 @@
 #+TITLE: lab.el
 
+[[https://melpa.org/#/lab][file:https://melpa.org/packages/lab-badge.svg]]
+
 /lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted).
 
 * Basics
@@ -13,23 +15,26 @@ Workflow is generally ~completing-read~ based. You list and select an item (a pr
 I extracted this package from my ~init.el~ as the feature set grew to a point that is too much to keep it in there. This may explain why some of the functionality that you expect a GitLab client would have is missing. It's because I probably don't use that feature.
 
 * Installation
+lab is available through [[https://melpa.org/#/lab][MELPA]]. If you have it set up already, just do ~M-x package-install lab~ and you are good to go. Otherwise please see [[https://melpa.org/#/getting-started][MELPA getting started]] page to learn how you can install packages through MELPA or see the following installation options.
 
-Just download =lab.el= file and put it into your =load-path=, afterwards you can simply do the following in your =init.el=:
-
-#+begin_src elisp
-  (require 'lab)
-#+end_src
-
-You can also use =use-package=
+Another way to install =lab.el= would be using either [[https://github.com/radian-software/straight.el][straight]] or [[https://github.com/quelpa/quelpa-use-package][quelpa]] package managers:
 
 #+begin_src elisp
-  ;; with straight:
+  ;; Using straight:
   (use-package lab
     :straight (:host github :repo "isamert/lab.el"))
 
-  ;; with quelpa:
+  ;; Using quelpa:
   (use-package lab
-    :quelpa (lab :fetcher github :repo "isamert/lab.el"))
+    :quelpa (lab
+             :fetcher github
+             :repo "isamert/lab.el"))
+#+end_src
+
+Yet another option is just downloading =lab.el= file and putting into your =load-path=, afterwards you can simply do the following in your =init.el=:
+
+#+begin_src elisp
+  (require 'lab)
 #+end_src
 
 * Usage
