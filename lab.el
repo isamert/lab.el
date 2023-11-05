@@ -703,9 +703,10 @@ Examples:
   (let (json (all-items '()) (lastid t))
     (while lastid
       (request
-        (thread-last (format "%s/api/v4/%s" lab-host endpoint)
-           (s-replace "#{group}" (url-hexify-string lab-group))
-           (s-replace "#{project}" (lab--project-path)))
+        (thread-last
+          (format "%s/api/v4/%s" lab-host endpoint)
+          (s-replace "#{group}" (url-hexify-string lab-group))
+          (s-replace "#{project}" (lab--project-path)))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
         :parser (if %raw?
