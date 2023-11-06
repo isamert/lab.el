@@ -105,6 +105,16 @@ Other functions work in similar fashion, where you list something (projects/pipe
 
 * Extras/tips
 
+** Keybindings
+
+No default keybindings are provided but there is ~lab-map~ keymap which contains some interactive lab functions. You can bind this keymap to a key, like following:
+
+  #+begin_src emacs-lisp
+  (bind-key "C-x l" lab-map)
+  #+end_src
+
+...and now you can do ~C-x mm~ to list your open merge requests, for example.  Do ~M-x describe-keymap~ lab-map to list all actions in this keymap.
+
 ** Supplemental packages
 
 Some packages enhances ~lab.el~ with extra features:
