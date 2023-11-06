@@ -205,6 +205,37 @@ Example:
 
 (defconst lab--pull-buffer-name "*lab-pull*")
 
+
+
+;;;###autoload
+(defvar lab-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "c" #'lab-git-clone)
+
+    (define-key map "pl" #'lab-act-on-last-failed-pipeline-job)
+    (define-key map "pp" #'lab-list-project-pipelines)
+    (define-key map "pg" #'lab-list-all-group-projects)
+    (define-key map "po" #'lab-list-all-owned-projects)
+
+    (define-key map "wp" #'lab-watch-pipeline)
+    (define-key map "wc" #'lab-watch-pipeline-for-last-commit)
+
+    (define-key map "mc" #'lab-create-merge-request)
+    (define-key map "mm" #'lab-list-my-merge-requests)
+    (define-key map "mg" #'lab-list-group-merge-requests)
+    (define-key map "mb" #'lab-list-branch-merge-requests)
+    (define-key map "mp" #'lab-list-project-merge-requests)
+    map)
+  "Keymap for commonly used interactive lab functions.
+It is not bound to any key by default.  You can bind this keymap
+to a key, like following:
+
+  (bind-key \"C-x l\" lab-map)
+
+...and now you can do `C-x mm' to list your open merge requests,
+for example.  Do \\[execute-extended-command] `describe-keymap'
+lab-map to list all actions in this keymap.")
+
 
 
 ;;; Elisp helpers:
