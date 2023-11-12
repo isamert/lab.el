@@ -369,7 +369,7 @@ function is called if given and the buffer is simply killed."
 
 (defvar embark-keymap-alist)
 (defvar embark-transformer-alist)
-(cl-defmacro lab--define-actions-for (category &key formatter keymap)
+(cl-defmacro lab--define-actions-for (category &key formatter keymap sort?)
   (declare (indent 1))
   (let ((lab--generate-action-name
          (lambda (category name &optional public?)
@@ -435,14 +435,15 @@ function is called if given and the buffer is simply killed."
                 (action-fn (,lab--generate-action-name ',category action)))
            (funcall action-fn item)))
 
-       (cl-defun ,(funcall lab--generate-action-name category "select-and-act-on" t) (items &key (sort? t))
-         (let* ((result (lab--completing-read-object
-                         (format "%s: " (s-titleize (format "%s" ',category)))
-                         items
-                         :formatter ,formatter
-                         :category ',lab-category-full-name
-                         :sort? sort?)))
-           (funcall #',(funcall lab--generate-action-name category "act-on" t) result))))))
+       (cl-defun ,(funcall lab--generate-action-name category "select-and-act-on" t) (items)
+         (ignore-error (quit minibuffer-quit)
+           (let* ((result (lab--completing-read-object
+                           (format "%s: " (s-titleize (format "%s" ',category)))
+                           items
+                           :formatter ,formatter
+                           :category ',lab-category-full-name
+                           :sort? ,sort?)))
+             (funcall #',(funcall lab--generate-action-name category "act-on" t) result)))))))
 
 (defvar project-current-inhibit-prompt)
 (defvar project-current-directory-override)
