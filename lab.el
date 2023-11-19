@@ -840,8 +840,7 @@ If it's omitted, currently open project is used."
    (lab-merge-request-select-and-act-on
     (lab--request
      (format "projects/%s/merge_requests" (or project "#{project}"))
-     :scope 'all)
-    :sort? nil)))
+     :scope 'all))))
 
 ;;;###autoload
 (defun lab-get-project-pipelines (&optional project)
@@ -858,8 +857,7 @@ If PROJECT is nil,current git project is used."
   (lab--within-current-project
    (lab-pipeline-select-and-act-on
     (lab--sort-by-latest-updated
-     (lab-get-project-pipelines project))
-    :sort? nil)))
+     (lab-get-project-pipelines project)))))
 
 
 ;;; Pipelines:
@@ -908,8 +906,7 @@ If PROJECT is nil,current git project is used."
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
   "List latest jobs for PIPELINE-ID in PROJECT-ID."
   (lab-job-select-and-act-on
-   (lab-get-pipeline-jobs project-id pipeline-id)
-   :sort? nil))
+   (lab-get-pipeline-jobs project-id pipeline-id)))
 
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
@@ -1063,7 +1060,7 @@ If PROJECT-ID is omitted, currently open project is used."
         (let-alist last-failed-pipeline
           (let ((jobs (seq-filter failed? (lab-get-pipeline-jobs .project_id .id))))
             (if (and jobs (> (length jobs) 0))
-                (lab-job-select-and-act-on jobs :sort? nil)
+                (lab-job-select-and-act-on jobs)
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
@@ -1098,8 +1095,7 @@ If PROJECT-ID is omitted, currently open project is used."
          (lab--request
           (format "projects/%s/merge_requests/%s/pipelines" .project_id .iid)
           :scope 'all
-          :state 'opened))
-        :sort? nil))
+          :state 'opened))))
    (?w "Watch last pipeline"
        (lab-watch-merge-request-last-pipeline it))
    (?i "Inspect"
@@ -1119,8 +1115,7 @@ If PROJECT-ID is omitted, currently open project is used."
      "projects/#{project}/merge_requests"
      :scope 'all
      :state 'opened
-     :source_branch (lab-git-current-branch)))
-   :sort? nil))
+     :source_branch (lab-git-current-branch)))))
 
 (defun lab-list-my-merge-requests ()
   "List all of your currently open merge requests.
@@ -1135,8 +1130,7 @@ If PROJECT-ID is omitted, currently open project is used."
       ,@(lab--request
          "merge_requests"
          :scope 'assigned_to_me
-         :state 'opened)))
-   :sort? nil))
+         :state 'opened)))))
 
 (defun lab-list-group-merge-requests (&optional group)
   "List all open MRs that belongs to GROUP.
@@ -1147,8 +1141,7 @@ If GROUP is omitted, `lab-group' is used."
     (lab--request
      (format "groups/%s/merge_requests" (or (when group (url-hexify-string group)) "#{group}"))
      :scope 'all
-     :state 'opened))
-   :sort? nil))
+     :state 'opened))))
 
 (defun lab--remove-diff-buffer ()
   (when-let (buffer (get-buffer-window lab--diff-buffer-name))
