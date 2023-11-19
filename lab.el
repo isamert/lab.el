@@ -6,7 +6,7 @@
 ;; Version: 1.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0"))
+;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@
 
 ;;; Code:
 
+(require 'compat)
 (require 's)
 (require 'pp)
 (require 'vc)
@@ -369,6 +370,7 @@ function is called if given and the buffer is simply killed."
 
 (defvar embark-keymap-alist)
 (defvar embark-transformer-alist)
+(defvar embark-general-map)
 (cl-defmacro lab--define-actions-for (category &key formatter keymap sort?)
   (declare (indent 1))
   (let ((lab--generate-action-name
@@ -394,14 +396,15 @@ function is called if given and the buffer is simply killed."
 
        ;; Define embark keymap and add it to `embark-keymap-alist.'
        ;; This uses the functions generated above.
-       (defvar ,lab-keymap-full-name
-         (let ((map (make-sparse-keymap)))
-           ,@(mapcar
-              (lambda (keydef)
-                `(define-key map ,(char-to-string (nth 0 keydef)) #',(funcall lab--generate-action-name category (nth 1 keydef))))
-              keymap)
-           map)
-         ,(format "Actions for %s" lab-category-full-name))
+       (defvar-keymap ,lab-keymap-full-name
+         :doc ,(format "Actions for %s" lab-category-full-name)
+         :parent embark-general-map
+         ,@(apply
+            #'append
+            (mapcar
+             (lambda (keydef)
+               `(,(char-to-string (nth 0 keydef)) #',(funcall lab--generate-action-name category (nth 1 keydef))))
+             keymap)))
 
        (with-eval-after-load 'embark
          (add-to-list 'embark-keymap-alist '(,lab-category-full-name . ,lab-keymap-full-name))
