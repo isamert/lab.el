@@ -396,17 +396,17 @@ function is called if given and the buffer is simply killed."
 
        ;; Define embark keymap and add it to `embark-keymap-alist.'
        ;; This uses the functions generated above.
-       (defvar-keymap ,lab-keymap-full-name
-         :doc ,(format "Actions for %s" lab-category-full-name)
-         :parent embark-general-map
-         ,@(apply
-            #'append
-            (mapcar
-             (lambda (keydef)
-               `(,(char-to-string (nth 0 keydef)) #',(funcall lab--generate-action-name category (nth 1 keydef))))
-             keymap)))
-
        (with-eval-after-load 'embark
+         (defvar-keymap ,lab-keymap-full-name
+           :doc ,(format "Actions for %s" lab-category-full-name)
+           :parent embark-general-map
+           ,@(apply
+              #'append
+              (mapcar
+               (lambda (keydef)
+                 `(,(char-to-string (nth 0 keydef)) #',(funcall lab--generate-action-name category (nth 1 keydef))))
+               keymap)))
+
          (add-to-list 'embark-keymap-alist '(,lab-category-full-name . ,lab-keymap-full-name))
 
          ;; Also define a embark transformer for these actions. That's
