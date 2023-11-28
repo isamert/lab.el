@@ -400,6 +400,8 @@ function is called if given and the buffer is simply killed."
          (defvar-keymap ,lab-keymap-full-name
            :doc ,(format "Actions for %s" lab-category-full-name)
            :parent embark-general-map
+           ;; Define the first binding as the default action
+           "RET" #',(funcall lab--generate-action-name category (nth 1 (car keymap)))
            ,@(apply
               #'append
               (mapcar
