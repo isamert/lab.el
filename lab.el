@@ -864,6 +864,16 @@ If PROJECT is nil,current git project is used."
     (lab--sort-by-latest-updated
      (lab-get-project-pipelines project)))))
 
+;;;###autoload
+(defun lab-act-on-last-project-pipeline (&optional project)
+  "List latest pipelines belonging to PROJECT.
+If PROJECT is nil,current git project is used."
+  (interactive)
+  (lab--within-current-project
+   (lab-pipeline-act-on
+    (car (let ((lab-result-count 1))
+           (lab-get-project-pipelines project))))))
+
 
 ;;; Pipelines:
 
