@@ -1270,6 +1270,8 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (propertize
    (upcase status) 'face
    `(:foreground ,(pcase (downcase status)
+                    ("created" "blue")
+                    ("running" "yellow")
                     ("failed" "red")
                     ("success" "green")
                     ("manual" "orange")))))
