@@ -545,7 +545,7 @@ A git repository is defined as a directory that contain a
     (user-error "Already using SSH method or something is wrong with the current upstream address!")))
 
 ;;;###autoload
-(defun lab-git-clone (url dir &optional callback)
+(cl-defun lab-git-clone (url dir &key shallow callback)
   "Clone URL to DIR.
 DIR will be the parent directory of the repo you've just cloned.
 You can think this as simple \"git clone URL\" call in DIR.
@@ -560,7 +560,9 @@ Also see `lab-after-git-clone-functions'."
     (read-directory-name "Directory to clone in: " lab-projects-directory)))
   (make-directory dir t)
   (let* ((default-directory dir)
-         (proc (start-process-shell-command "*lab-clone*" lab--clone-buffer-name (format "git clone --quiet '%s'" url))))
+         (proc (start-process-shell-command
+                "*lab-clone*" lab--clone-buffer-name
+                (format "git clone --quiet %s '%s'" (if shallow "--depth=1" "") url))))
     (with-current-buffer lab--clone-buffer-name
       (goto-char (point-max))
       (insert (format ">> Cloning %s to %s...\n" url dir)))
