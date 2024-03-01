@@ -1243,6 +1243,29 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
 
+;; TODOs:
+
+(lab--define-actions-for todo
+  :formatter #'lab--format-todo
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .target_url))
+   (?d "Mark as done" (lab--request
+                       (format "todos/%s/mark_as_done" .id)
+                       :%type "POST"))
+   (?i "Inspect"
+       (lab--inspect-obj it))))
+
+(defun lab--format-todo (todo)
+  (format "%s: %s"
+          (propertize (alist-get 'state todo) 'face '(:weight bold))
+          (alist-get 'body todo)))
+
+(defun lab-list-todos ()
+  "List all todos for current user."
+  (interactive)
+  (lab-todo-select-and-act-on
+   (lab--request "todos")))
 
 ;;; Formatters & other helpers:
 
