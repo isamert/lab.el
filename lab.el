@@ -1257,9 +1257,23 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
        (lab--inspect-obj it))))
 
 (defun lab--format-todo (todo)
-  (format "%s: %s"
-          (propertize (alist-get 'state todo) 'face '(:weight bold))
-          (alist-get 'body todo)))
+  (let* ((time (lab--time-ago (date-to-time (alist-get 'created_at todo))))
+         (person (alist-get 'username (alist-get 'author todo)))
+         (type (alist-get 'target_type todo))
+         (project-name (alist-get 'name (alist-get 'project todo)))
+         (group-name (alist-get 'name (alist-get 'group todo)))
+         (title (alist-get 'title (alist-get 'target todo)))
+         (name (pcase type
+                 ("Issue" (format "%s#%s" project-name title))
+                 ("MergeRequest" (format "%s!%s" project-name title))
+                 ("Epic" (format "%s/%s" group-name title))
+                 (_ title))))
+    (format "%-15s: %s@%s:%s %s"
+            time
+            (propertize person 'face '(:weight thin :slant italic))
+            (alist-get 'target_type todo)
+            (propertize name 'face 'bold)
+            (alist-get 'body todo))))
 
 (defun lab-list-todos ()
   "List all todos for current user."
