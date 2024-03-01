@@ -1266,6 +1266,14 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (interactive)
   (lab-todo-select-and-act-on
    (lab--request "todos")))
+
+(defun lab-mark-done-all-todos ()
+  "Mark all todos as done."
+  (interactive)
+  (lab--request
+   "todos/mark_as_done"
+   :%type "POST"))
+
 
 ;;; Formatters & other helpers:
 
