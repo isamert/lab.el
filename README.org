@@ -90,6 +90,12 @@ Here is a quick rundown of features ~lab.el~ provides. I've included entry funct
     - Trigger retries, cancellation or deletion.
     - Show logs of a job on a nicely formatted buffer.
     - Show detailed information about given job.
+- TODOs ::
+  - List all TODOs for current user
+  - Mark all TODOs as done
+  - Act on TODOs:
+    - Open them in browser.
+    - Mark as done.  
 
 Here are few screenshots to get a feel of what you would see while using ~lab.el~:
 

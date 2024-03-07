@@ -123,7 +123,7 @@ Can't be higher than `lab--max-per-page-result-count'."
   'ssh
   "Prefered for cloning repositories into your local."
   :type '(choice (const :tag "SSH" ssh)
-                 (const :tag "HTTPS" https))
+          (const :tag "HTTPS" https))
   :group 'lab)
 
 (defcustom lab-action-handler
@@ -132,7 +132,7 @@ Can't be higher than `lab--max-per-page-result-count'."
 `lab' uses the given function for listing possible actions on a
 selection."
   :type '(choice (const :tag "completing-read" completing-read)
-                 (const :tag "read-multiple-choice" read-multiple-choice))
+          (const :tag "read-multiple-choice" read-multiple-choice))
   :group 'lab)
 
 (defcustom lab-main-branch-name
@@ -455,12 +455,12 @@ function is called if given and the buffer is simply killed."
 (defmacro lab--within-current-project (&rest forms)
   "Let you run FORMS in current projects directory."
   `(let ((default-directory
-           (or
-            (when (boundp 'project-current-inhibit-prompt)
-              project-current-inhibit-prompt)
-            (when (boundp 'project-current-directory-override)
-              project-current-directory-override)
-            default-directory)))
+          (or
+           (when (boundp 'project-current-inhibit-prompt)
+             project-current-inhibit-prompt)
+           (when (boundp 'project-current-directory-override)
+             project-current-directory-override)
+           default-directory)))
      ,@forms))
 
 (defun lab--find-all-repositories-under (path)
@@ -1243,6 +1243,50 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
 
+;; TODOs:
+
+(lab--define-actions-for todo
+  :formatter #'lab--format-todo
+  :keymap
+  ((?o "Open"
+       (lab--open-web-url .target_url))
+   (?d "Mark as done" (lab--request
+                       (format "todos/%s/mark_as_done" .id)
+                       :%type "POST"))
+   (?i "Inspect"
+       (lab--inspect-obj it))))
+
+(defun lab--format-todo (todo)
+  (let* ((time (lab--time-ago (date-to-time (alist-get 'created_at todo))))
+         (person (alist-get 'username (alist-get 'author todo)))
+         (type (alist-get 'target_type todo))
+         (project-name (alist-get 'name (alist-get 'project todo)))
+         (group-name (alist-get 'name (alist-get 'group todo)))
+         (title (alist-get 'title (alist-get 'target todo)))
+         (name (pcase type
+                 ("Issue" (format "%s#%s" project-name title))
+                 ("MergeRequest" (format "%s!%s" project-name title))
+                 ("Epic" (format "%s/%s" group-name title))
+                 (_ title))))
+    (format "%-15s: %s@%s:%s %s"
+            time
+            (propertize person 'face '(:weight thin :slant italic))
+            (alist-get 'target_type todo)
+            (propertize name 'face 'bold)
+            (alist-get 'body todo))))
+
+(defun lab-list-todos ()
+  "List all todos for current user."
+  (interactive)
+  (lab-todo-select-and-act-on
+   (lab--request "todos")))
+
+(defun lab-mark-done-all-todos ()
+  "Mark all todos as done."
+  (interactive)
+  (lab--request
+   "todos/mark_as_done"
+   :%type "POST"))
 
 ;;; Formatters & other helpers:
 
