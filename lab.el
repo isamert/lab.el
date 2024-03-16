@@ -3,10 +3,10 @@
 ;; Copyright (C) 2023 Isa Mert Gurbuz
 
 ;; Author: Isa Mert Gurbuz <isamertgurbuz@gmail.com>
-;; Version: 1.0.0
+;; Version: 2.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4"))
+;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -46,6 +46,8 @@
 (require 'request)
 (require 'memoize)
 (require 'ansi-color)
+(require 'async-await)
+(require 'promise)
 
 
 ;; Customization:
@@ -177,12 +179,13 @@ This is the duration between calls, in seconds."
   :type 'number
   :group 'lab)
 
-(defcustom lab-git-pull-options '("--quiet" "--stat")
-  "\"git pull\" options used by `lab-git-pull'.
-Example:
-  \\='(\"--quiet\" \"--all\" \"--tags\" \"--prune\" \"--rebase\" \"--autostash\")"
-  :type 'string
-  :group 'lab)
+(defcustom lab-pull-bulk-switch-to-main nil
+  "Whether to switch to main branch before pulling in `lab-pull-bulk'.
+If set to a non-nil value, then switch to the main branch of the
+repository and then pull project.  See `lab-main-branch-name' to
+learn how the \"main\" branch is determined."
+  :group 'lab
+  :type 'boolean)
 
 
 ;;; Internal variables/constants:
@@ -202,9 +205,11 @@ Example:
 
 (defconst lab--diff-buffer-name "*lab-diff*")
 
-(defconst lab--clone-buffer-name "*lab-clone*")
+(defconst lab--clone-bulk-buffer-name "*lab-clone*")
 
-(defconst lab--pull-buffer-name "*lab-pull*")
+(defconst lab--pull-bulk-buffer "*lab-pull-bulk*")
+
+(defvar lab--interrupt nil)
 
 
 
@@ -237,6 +242,10 @@ to a key, like following:
 for example.  Do \\[execute-extended-command] `describe-keymap'
 lab-map to list all actions in this keymap.")
 
+(defun lab-interrupt ()
+  "Interrupt currently long-running `lab' process."
+  (interactive)
+  (setq lab--interrupt t))
 
 
 ;;; Elisp helpers:
@@ -463,19 +472,6 @@ function is called if given and the buffer is simply killed."
             default-directory)))
      ,@forms))
 
-(defun lab--find-all-repositories-under (path)
-  "Find all repositories under the given PATH.
-A git repository is defined as a directory that contain a
-\".git\" sub-directory."
-  (thread-last
-    path
-    expand-file-name
-    (format "find %s -type d -name '.git' -maxdepth 5")
-    shell-command-to-string
-    s-trim
-    (s-split "\n")
-    (mapcar (lambda (it) (string-remove-suffix "/.git" it)))))
-
 (defun lab--path-join (p1 &rest rest)
   "Join P1 and REST into a single path.
 
@@ -484,6 +480,74 @@ A git repository is defined as a directory that contain a
 >> (lab--path-join \"/home/isa/\" \"x/y/\" \"z.json\")
 => \"/home/isa/x/y/z.json\""
   (seq-reduce (lambda (acc it) (concat acc "/" (string-remove-suffix "/" it))) rest (string-remove-suffix "/" p1)))
+
+(defun lab--listify (obj)
+  (if (listp obj)
+      obj
+    (list obj)))
+
+
+;;; Private git utilities
+
+(defun lab--git (cmd &rest options)
+  "Run git CMD with OPTIONS.
+This returns a promise.  When the git CMD fails, the promise is
+rejected otherwise resolved value contains the output of the git
+CMD."
+  (promise-new
+   (lambda (resolve reject)
+     (let* ((pname (format "*lab-git-%s*" cmd))
+            (proc (start-process-shell-command
+                   pname nil
+                   (format "git --no-pager %s %s" cmd (string-join options " "))))
+            (output ""))
+       (set-process-filter
+        proc
+        (lambda (_process out)
+          (setq output (concat output out))))
+       (set-process-sentinel
+        proc
+        (lambda (p _e)
+          (if (= 0 (process-exit-status p))
+              (funcall resolve (string-trim output))
+            (funcall reject (string-trim output)))))))))
+
+(async-defun lab--pull-bulk-single (repository)
+  "Do a git pull in the REPOSITORY.
+This is specifically designed for `lab-pull-bulk' and have no
+other uses."
+  (condition-case reason
+      (let* ((default-directory repository)
+             (branches (split-string (await (lab--git "branch" "--list")) "\n" t "[ \\*\t]+"))
+             (current-branch (await (lab--git "branch" "--show-current")))
+             (main-branch (seq-find
+                           (lambda (branch) (string-match (regexp-opt (lab--listify lab-main-branch-name) t) (or branch "NULL")))
+                           branches))
+             (needs-checkout? (not (equal current-branch main-branch))))
+        (await (lab--git "stash"))
+        (when needs-checkout?
+          (await (lab--git "checkout" main-branch)))
+        (list 'success (await (lab--git "pull"))))
+    (error
+     (list 'error (cadr reason)))))
+
+
+;;; Project helpers:
+
+;;;###autoload
+(defun lab-all-project-roots (&optional dir)
+  "Find every project dir under DIR.
+DIR is `lab-projects-directory' by default.
+
+This function simply checks for folders with `.git' under them."
+  (thread-last
+    (expand-file-name (or dir lab-projects-directory))
+    (format "fd . '%s' --type directory --maxdepth 6 --absolute-path")
+    (shell-command-to-string)
+    (string-trim)
+    (s-split "\n")
+    (seq-filter #'lab-git-dir?)
+    (seq-map #'expand-file-name)))
 
 
 ;;; Git helpers:
@@ -529,6 +593,11 @@ A git repository is defined as a directory that contain a
         (s-prepend "https://")))
      (t (s-chop-suffix ".git" remote-url)))))
 
+;;;###autoload
+(defun lab-git-dir? (dir)
+  "Check if DIR is git version controlled directory."
+  (file-directory-p (concat dir "/.git")))
+
 
 ;;; Git helpers (interactive):
 
@@ -561,9 +630,9 @@ Also see `lab-after-git-clone-functions'."
   (make-directory dir t)
   (let* ((default-directory dir)
          (proc (start-process-shell-command
-                "*lab-clone*" lab--clone-buffer-name
+                "*lab-clone*" lab--clone-bulk-buffer-name
                 (format "git clone --quiet %s '%s'" (if shallow "--depth=1" "") url))))
-    (with-current-buffer lab--clone-buffer-name
+    (with-current-buffer lab--clone-bulk-buffer-name
       (goto-char (point-max))
       (insert (format ">> Cloning %s to %s...\n" url dir)))
     (set-process-sentinel
@@ -574,7 +643,7 @@ Also see `lab-after-git-clone-functions'."
                   (default-directory (concat (string-trim-right dir "/") "/" repo-name)))
              (when callback
                (funcall callback t)
-               (with-current-buffer lab--clone-buffer-name
+               (with-current-buffer lab--clone-bulk-buffer-name
                  (goto-char (point-max))
                  (insert (format ">> Cloning %s to %s...Done\n" url dir))))
              (unless callback
@@ -585,68 +654,11 @@ Also see `lab-after-git-clone-functions'."
                (seq-each #'funcall lab-after-git-clone-functions)))
          (if callback
              (progn
-               (with-current-buffer lab--clone-buffer-name
+               (with-current-buffer lab--clone-bulk-buffer-name
                  (goto-char (point-max))
                  (insert (format ">> Cloning %s to %s...Failed!\n" url dir)))
                (funcall callback nil))
            (message "Cloning %s is failed." url)))))))
-
-;;;###autoload
-(defun lab-git-pull (&optional path callback)
-  "Simply run \"git pull\" on PATH.
-If PATH is nil, `default-directory' is assumed.  CALLBACK is
-called with either t or nil, indicating success status.
-
-Also see `lab-git-pull-options'."
-  (interactive)
-  (setq path (or path default-directory))
-  (let ((default-directory path)
-        (interactive? (called-interactively-p 'interactive)))
-    (with-current-buffer (get-buffer-create lab--pull-buffer-name)
-      (goto-char (point-max))
-      (let ((msg (format ">> Pulling %s...\n" path)))
-        (insert msg)
-        (when interactive?
-          (message msg)
-          (switch-to-buffer-other-window lab--pull-buffer-name))))
-    (set-process-sentinel
-     (start-process-shell-command
-      "*lab-pull*" lab--pull-buffer-name
-      (format "git pull %s" lab-git-pull-options))
-     (lambda (p _e)
-       (let ((success? (= 0 (process-exit-status p))))
-         (with-current-buffer lab--pull-buffer-name
-           (let ((msg (format ">> Pulling %s...%s.\n" path (if success? "Done" "Failed"))))
-             (insert msg)
-             (when interactive?
-               (message msg))))
-         (when callback
-           (funcall callback success?)))))))
-
-;; TODO: automatically switch to master branch if requested. while
-;; switching, stash first if dirty?
-;;;###autoload
-(defun lab-pull-bulk (&optional repositories)
-  "Pull all REPOSITORIES.
-REPOSITORIES is a list of paths to different repositories.  When
-called interactively, it asks you for a path (also see
-`lab-projects-directory'), finds all git repositories under that
-directory and pulls them using `lab-git-pull'.
-
-It is recommended to have \"--autostash\" present in your
-`lab-git-pull-options' so that you can pull even if repo is in
-dirty state."
-  (interactive
-   (list (lab--find-all-repositories-under (read-directory-name "Path: " lab-projects-directory))))
-  (if-let ((current (car repositories)))
-      (progn
-        (message "lab :: Pulling %s..." current)
-        (lab-git-pull
-         current
-         (lambda (success?)
-           (message "lab :: Pulling %s...%s" current (if success? "Done" "Failed!"))
-           (lab-pull-bulk (seq-drop repositories 1)))))
-    (message "lab :: Pulled all repositories. Check buffer *lab-pull* for details.")))
 
 ;; TODO: Pull existing repositories with: (lab-pull-bulk existing root)?
 ;;;###autoload
@@ -688,7 +700,57 @@ group path to fetch all projects of (also see `lab-group')."
          (lambda (success?)
            (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
            (lab-clone-bulk root (seq-drop repositories 1)))))
-    (message "lab :: Cloned all repositories. Check buffer %s for details." lab--clone-buffer-name)))
+    (message "lab :: Cloned all repositories. Check buffer %s for details." lab--clone-bulk-buffer-name)))
+
+(async-defun lab-pull-bulk (&optional repositories)
+  "Pull all REPOSITORIES.
+REPOSITORIES is a list of paths to different repositories.  When
+called interactively, it asks you for a path (also see
+`lab-projects-directory'), finds all git repositories under that
+directory and pulls them using `lab-git-pull'.
+
+See the following variables to control the behavior of pulling:
+`lab-pull-bulk-switch-to-main', `lab-main-branch-name'."
+  (interactive (list (lab-all-project-roots (read-directory-name "Path: " lab-projects-directory))))
+  (with-current-buffer (get-buffer-create lab--pull-bulk-buffer)
+    (condition-case reason
+        (let ((failed '())
+              (index 0))
+          (erase-buffer)
+          (switch-to-buffer-other-window (current-buffer))
+          (dolist (repository repositories)
+            (insert (format ">> (%s/%s) Pulling %s...\n"
+                            (1+ index)
+                            (length repositories)
+                            (abbreviate-file-name repository)))
+            (when lab--interrupt
+              (setq lab--interrupt nil)
+              (user-error "Pulling interrupted by user"))
+            (pcase-let ((`(,status ,output) (await (lab--pull-bulk-single repository))))
+              (goto-char (point-max))
+              (insert (format "%s\n" (string-trim (or output ""))))
+              (insert
+               (format
+                ">> Exited with %s\n\n"
+                (propertize (format "%s" status) 'face
+                            `(:weight bold :foreground ,(pcase status
+                                                          ('success "green")
+                                                          (_ "red"))))))
+              (unless (eq status 'success)
+                (push repository failed)))
+            (setq index (1+ index)))
+          (if (seq-empty-p failed)
+              (insert ">> Pulled all repositories successfully!")
+            (insert "lab was unable to pull the following repositories:\n")
+            (dolist (it failed)
+              (goto-char (point-max))
+              (insert (format "- %s\n" (abbreviate-file-name it))))))
+      (error
+       (let ((msg (format "Pulling %s with reason: %s"
+                          (propertize "failed" 'face '(:foreground "red"))
+                          reason)))
+         (insert "\n" msg "\n")
+         (message msg))))))
 
 
 ;;; Core:
@@ -1169,9 +1231,7 @@ If GROUP is omitted, `lab-group' is used."
 Main branch is one the branch names listed in `lab-main-branch-name'."
   (seq-find
    (lambda (it) (member it (vc-git-branches)))
-   (if (stringp lab-main-branch-name)
-       (list lab-main-branch-name)
-     lab-main-branch-name)))
+   (lab--listify lab-main-branch-name)))
 
 (declare-function markdown-mode "markdown-mode")
 (defun lab-create-merge-request ()
@@ -1236,9 +1296,9 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                         (s-split "\n")
                         (mapcar (lambda (it) (mapcar #'s-trim (s-split-up-to ": " it 1))))
                         (seq-filter (lambda (it) (and (lab--length= it 2)
-                                                 (not (s-blank? (car it))))))
+                                                      (not (s-blank? (car it))))))
                         (mapcar (lambda (it) (list (intern (concat ":" (car it)))
-                                              (lab--deserialize-yaml-value (cadr it)))))
+                                                   (lab--deserialize-yaml-value (cadr it)))))
                         (apply #'seq-concatenate 'list)))))
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))

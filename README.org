@@ -66,6 +66,7 @@ Here is a quick rundown of features ~lab.el~ provides. I've included entry funct
     - Clone single project or do a bulk cloning.
     - List merge requests of given project.
     - Show detailed information about given project.
+  - Bulk pull projects to keep your local copies up-to-date (~lab-pull-bulk~).
 - Merge Requests ::
   - List merge requests belonging to a group, a branch, a project or all merge requests that you created or assigned to (~lab-list-{my,group,branch,project}-merge-requests~), and act on these merge requests:
     - Open them in browser.
@@ -95,7 +96,7 @@ Here is a quick rundown of features ~lab.el~ provides. I've included entry funct
   - Mark all TODOs as done
   - Act on TODOs:
     - Open them in browser.
-    - Mark as done.  
+    - Mark as done.
 
 Here are few screenshots to get a feel of what you would see while using ~lab.el~:
 
