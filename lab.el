@@ -759,14 +759,23 @@ See the following variables to control the behavior of pulling:
   "Return hexified project path for current git project.
 This is mostly used while doing an api call for the current
 project."
-  (thread-last
-    (lab-git-remote-homepage)
-    (s-chop-prefix lab-host)
-    (s-chop-prefix "/")
-    (s-chop-prefix "/")
-    (s-chop-prefix "/")
-    (s-trim)
-    (url-hexify-string)))
+  (let ((remote-url (lab-git-get-config "remote.origin.url")))
+    (if (s-prefix? "http" remote-url)
+        (thread-last
+          remote-url
+          (s-chop-suffix ".git")
+          (s-chop-prefix lab-host)
+          (s-chop-prefix "/")
+          (s-chop-prefix "/")
+          (s-chop-prefix "/")
+          (s-trim)
+          (url-hexify-string))
+      (thread-last
+        (s-split-up-to ":" remote-url 1)
+        (cadr)
+        (s-chop-suffix ".git")
+        (s-trim)
+        (url-hexify-string)))))
 
 (cl-defun lab--request
     (endpoint
