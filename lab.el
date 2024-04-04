@@ -817,7 +817,9 @@ Examples:
         (thread-last
           (format "%s/api/v4/%s" lab-host endpoint)
           (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string lab-group)))
-          (s-replace-regexp "#{project}" (lambda (&rest _) (lab--project-path))))
+          (s-replace-regexp "#{project}" (lambda (&rest _) (or (ignore-errors
+                                                                 (lab--project-path))
+                                                               (user-error "You are not in a valid git project")))))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
         :parser (if %raw?
