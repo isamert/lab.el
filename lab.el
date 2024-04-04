@@ -816,8 +816,8 @@ Examples:
       (request
         (thread-last
           (format "%s/api/v4/%s" lab-host endpoint)
-          (s-replace "#{group}" (url-hexify-string lab-group))
-          (s-replace "#{project}" (lab--project-path)))
+          (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string lab-group)))
+          (s-replace-regexp "#{project}" (lambda (&rest _) (lab--project-path))))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
         :parser (if %raw?
