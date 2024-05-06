@@ -697,6 +697,7 @@ group path to fetch all projects of (also see `lab-group')."
         (lab-git-clone
          (alist-get (lab--clone-url-path-selector) current)
          project-parent
+         :callback
          (lambda (success?)
            (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
            (lab-clone-bulk root (seq-drop repositories 1)))))
