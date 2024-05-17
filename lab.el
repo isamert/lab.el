@@ -49,7 +49,6 @@
 (require 'async-await)
 (require 'promise)
 
-
 ;; Customization:
 
 (defgroup lab nil
@@ -187,8 +186,7 @@ learn how the \"main\" branch is determined."
   :group 'lab
   :type 'boolean)
 
-
-;;; Internal variables/constants:
+;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
   "Buffer name for showing pretty printed results.")
@@ -211,7 +209,7 @@ learn how the \"main\" branch is determined."
 
 (defvar lab--interrupt nil)
 
-
+;;;; Public variables & utilities
 
 ;;;###autoload
 (defvar lab-map
@@ -247,8 +245,7 @@ lab-map to list all actions in this keymap.")
   (interactive)
   (setq lab--interrupt t))
 
-
-;;; Elisp helpers:
+;;;; Elisp helpers:
 
 (defun lab-last-item (list)
   "Return the last item of LIST."
@@ -288,8 +285,7 @@ lab-map to list all actions in this keymap.")
 (defun lab--length= (lst it)
   (= (length lst) it))
 
-
-;;; Utilities:
+;;;; Utilities:
 
 ;; The discussion made here[1] was quite helpful for implementing the following functionality.
 ;; [1]: https://github.com/oantolin/embark/issues/495
@@ -486,8 +482,7 @@ function is called if given and the buffer is simply killed."
       obj
     (list obj)))
 
-
-;;; Private git utilities
+;;;; Private git utilities
 
 (defun lab--git (cmd &rest options)
   "Run git CMD with OPTIONS.
@@ -531,8 +526,7 @@ other uses."
     (error
      (list 'error (cadr reason)))))
 
-
-;;; Project helpers:
+;;;; Project helpers:
 
 ;;;###autoload
 (defun lab-all-project-roots (&optional dir)
@@ -549,8 +543,7 @@ This function simply checks for folders with `.git' under them."
     (seq-filter #'lab-git-dir?)
     (seq-map #'expand-file-name)))
 
-
-;;; Git helpers:
+;;;; Git helpers:
 
 ;;;###autoload
 (defun lab-git-current-branch ()
@@ -598,8 +591,7 @@ This function simply checks for folders with `.git' under them."
   "Check if DIR is git version controlled directory."
   (file-directory-p (concat dir "/.git")))
 
-
-;;; Git helpers (interactive):
+;;;; Git helpers (interactive):
 
 ;;;###autoload
 (defun lab-git-origin-switch-to-ssh ()
@@ -711,7 +703,9 @@ called interactively, it asks you for a path (also see
 directory and pulls them using `lab-git-pull'.
 
 See the following variables to control the behavior of pulling:
-`lab-pull-bulk-switch-to-main', `lab-main-branch-name'."
+`lab-pull-bulk-switch-to-main', `lab-main-branch-name'.
+
+You can interrupt the process by calling \\[lab-interrupt]."
   (interactive (list (lab-all-project-roots (read-directory-name "Path: " lab-projects-directory))))
   (with-current-buffer (get-buffer-create lab--pull-bulk-buffer)
     (condition-case reason
@@ -753,8 +747,7 @@ See the following variables to control the behavior of pulling:
          (insert "\n" msg "\n")
          (message msg))))))
 
-
-;;; Core:
+;;;; Core:
 
 (defun lab--project-path ()
   "Return hexified project path for current git project.
@@ -860,8 +853,7 @@ Examples:
   (kill-new url)
   (funcall lab-browse-url-fn url))
 
-
-;;; Projects:
+;;;; Projects:
 
 (lab--define-actions-for project
   :formatter #'lab--format-project-title
@@ -950,8 +942,7 @@ If PROJECT is nil,current git project is used."
     (car (let ((lab-result-count 1))
            (lab-get-project-pipelines project))))))
 
-
-;;; Pipelines:
+;;;; Pipelines:
 
 (lab--define-actions-for pipeline
   :formatter #'lab--format-pipeline
@@ -1065,8 +1056,7 @@ recurring call, instead of a new watch request."
                             (alist-get 'iid mr)))))
        (lab-watch-pipeline (alist-get 'web_url pipeline))))))
 
-
-;;; lab-trace-mode:
+;;;; lab-trace-mode:
 
 ;; TODO Add retry action for `lab-trace-mode-current-job' and start watching it
 ;; automatically
@@ -1107,8 +1097,7 @@ recurring call, instead of a new watch request."
           :%raw? t))))
       (switch-to-buffer-other-window (current-buffer)))))
 
-
-;;; Jobs:
+;;;; Jobs:
 
 (lab--define-actions-for job
   :formatter #'lab--format-job
@@ -1155,8 +1144,7 @@ If PROJECT-ID is omitted, currently open project is used."
               (user-error "A failed pipeline found but no failed job is found, see %s" .web_url))))
       (user-error "Not a single failed pipeline, congrats :)"))))
 
-
-;;; Merge Requests:
+;;;; Merge Requests:
 
 (lab--define-actions-for merge-request
   :formatter #'lab--format-merge-request-title
@@ -1315,8 +1303,7 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
 
-
-;; TODOs:
+;;;; TODOs:
 
 (lab--define-actions-for todo
   :formatter #'lab--format-todo
@@ -1342,8 +1329,7 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
    "todos/mark_as_done"
    :%type "POST"))
 
-
-;;; Formatters & other helpers:
+;;;; Formatters & other helpers:
 
 (defun lab--format-merge-request-title (mr)
   (format "[%-15s | %-6s => %-15s] %s"
