@@ -285,6 +285,17 @@ lab-map to list all actions in this keymap.")
 (defun lab--length= (lst it)
   (= (length lst) it))
 
+(defun lab--alist-path-get (path alist)
+  "Get the value associated with a specific PATH in ALIST.
+
+>> (let ((alist `((a . ((b . ((c . d)))))))
+         (path `(a b c)))
+    (lab--alist-path-get path alist))
+=> d"
+  (if (eq (length path) 1)
+      (alist-get (car path) alist)
+    (lab--alist-path-get (seq-drop path 1) (alist-get (car path) alist))))
+
 ;;;; Utilities:
 
 ;; The discussion made here[1] was quite helpful for implementing the following functionality.
@@ -1328,6 +1339,92 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (lab--request
    "todos/mark_as_done"
    :%type "POST"))
+
+;;;; Org-mode integration
+
+(declare-function org-table-align "org")
+
+(defun org-dblock-write:lab-merge-requests (params)
+  "Fetch and draw a table of merge requests based on PARAMS.
+PARAMS is an plist where the keys are:
+
+- :HEADERS is a list of headers for the table, each item is a
+  JSON path like string for fetching value from the GitLab
+  response.  The default is \\='(\"state\" \"title\"
+  \"author.username\").
+
+- :TYPE is the type of the request, possible values are `mine',
+  `group', `project'.  `mine' fetches the merge requests that is
+  either created by you or assigned to you.  `group' fetches the
+  merge requests that are opened under your GitLab group.  By
+  default `lab-group' is used as your group, or you can also
+  supply :GROUP parameter to override it.  `project' fetches
+  merge requests that belongs to current project or you can use
+  :PROJECT to override it.  It should be either GitLab project id
+  or project path like \"a-group-name/project\".
+
+- :STATE is the state of the merge requests. Possible states are
+  `opened', `closed', `merged' or `all'.  Default is `opened'.
+
+- :SCOPE is the scope of the merge requests.  Please see GitLab
+  API documentation for more information.  The default is `all'.
+
+- :LIMIT is the maximum count of results.  By default it's
+  `lab-result-count'.  The maximum is
+  `lab--max-per-page-result-count'.
+
+- For :GROUP and :PROJECT, see the explanation for :TYPE."
+  (let* ((headers (or (plist-get params :headers) '("state" "title" "author.username")))
+         ;; Possible types: mine, group, project
+         (type (or (plist-get params :type) 'mine))
+         ;; Possible states :: opened, closed, locked, merged, all
+         (state (or (plist-get params :state) 'opened))
+         (group (url-hexify-string (or (plist-get params :group) lab-group)))
+         (scope (or (plist-get params :scope) 'all))
+         ;; TODO (or ... current-project?)
+         (project (or (plist-get params :project)))
+         (lab-result-count (or (plist-get params :limit) lab-result-count))
+         (mrs
+          (pcase type
+            ('mine (lab--sort-by-latest-updated
+                    `(,@(lab--request
+                         "merge_requests"
+                         :scope 'created_by_me
+                         :state state)
+                      ,@(lab--request
+                         "merge_requests"
+                         :scope 'assigned_to_me
+                         :state state))))
+            ('group (lab--sort-by-latest-updated
+                     (lab--request
+                      (format "groups/%s/merge_requests" group)
+                      :scope scope
+                      :state state)))
+            ;; TODO: Maybe also add branch? :source_branch (or branch (lab-git-current-branch))
+            ('project (lab--request
+                       (format "projects/%s/merge_requests" (or project "#{project}"))
+                       :scope scope
+                       :state state)))))
+    (insert "|")
+    (seq-do
+     (lambda (it ) (insert (s-titleize (s-replace-all '(("_" . " ") ("." . " ")) it)) "|"))
+     headers)
+    (insert "\n|--")
+    (seq-do
+     (lambda (mr)
+       (insert "\n|")
+       (seq-do
+        (lambda (header)
+          (insert
+           (let ((val (s-replace "|" "ǀ" (lab--alist-path-get (mapcar (lambda (it) (intern it)) (s-split "\\." header)) mr))))
+             (format "%s"
+                     (if (equal header "title")
+                         (format "[[%s][%s]]" (alist-get 'web_url mr) val)
+                       val)))
+           "|"))
+        headers))
+     mrs)
+    (org-table-align)))
 
 ;;;; Formatters & other helpers:
 
