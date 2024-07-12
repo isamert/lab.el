@@ -575,14 +575,6 @@ This function simply checks for folders with `.git' under them."
     s-trim))
 
 ;;;###autoload
-(defun lab-git-user-name ()
-  "Return user name."
-  (thread-last
-    (lab-git-get-config "user.email")
-    (s-split "@")
-    car))
-
-;;;###autoload
 (defun lab-git-remote-homepage ()
   "Generate API base homepage from repository origin remote URL."
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
