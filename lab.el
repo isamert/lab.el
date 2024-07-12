@@ -1306,10 +1306,12 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                         yaml
                         (s-split "\n")
                         (mapcar (lambda (it) (mapcar #'s-trim (s-split-up-to ": " it 1))))
-                        (seq-filter (lambda (it) (and (lab--length= it 2)
-                                                      (not (s-blank? (car it))))))
-                        (mapcar (lambda (it) (list (intern (concat ":" (car it)))
-                                                   (lab--deserialize-yaml-value (cadr it)))))
+                        (seq-filter (lambda (it)
+                                      (and (lab--length= it 2)
+                                           (not (s-blank? (car it))))))
+                        (mapcar (lambda (it)
+                                  (list (intern (concat ":" (car it)))
+                                        (lab--deserialize-yaml-value (cadr it)))))
                         (apply #'seq-concatenate 'list)))))
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
