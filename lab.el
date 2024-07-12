@@ -570,7 +570,7 @@ This function simply checks for folders with `.git' under them."
 (defun lab-git-get-config (conf)
   "`git config --get CONF' wrapper."
   (thread-last
-    (format "git config --get '%s'" conf)
+    (format "git config --get %s" conf)
     shell-command-to-string
     s-trim))
 
