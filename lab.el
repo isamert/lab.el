@@ -1191,6 +1191,14 @@ If PROJECT-ID is omitted, currently open project is used."
    (?i "Inspect"
        (lab--inspect-obj it))))
 
+(defun lab-act-on-merge-request (url)
+  "Act on given merge request URL."
+  (interactive "sMerge Request URL: ")
+  (lab-merge-request-act-on
+   ;; No need to do a request for full MR object because every field
+   ;; we need for actions are available on the URL.
+   (lab--parse-merge-request-url url)))
+
 (defun lab-get-merge-request-pipelines (project-id mr-id)
   "Get last pipelines for MR-ID in PROJECT-ID."
   (lab--request
@@ -1315,6 +1323,28 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                         (apply #'seq-concatenate 'list)))))
     (map-insert yaml-data
                 :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
+
+(defun lab--parse-merge-request-url (url)
+  "Parse given merge request URL into a merge request object.
+
+>> (let ((lab-host \"https://mycompany.gitlab.com\"))
+     (lab--parse-merge-request-url \"https://mycompany.gitlab.com/some/project/path/-/merge_requests/579\"))
+=> ((web_url . \"https://mycompany.gitlab.com/some/project/path/-/merge_requests/579\")
+    (project_id . \"some%2Fproject%2Fpath\")
+    (iid . \"579\"))
+
+>> (let ((lab-host \"https://mycompany.gitlab.com/\"))
+     (lab--parse-merge-request-url \"https://mycompany.gitlab.com/some/project/path/-/merge_requests/579/\"))
+=> ((web_url . \"https://mycompany.gitlab.com/some/project/path/-/merge_requests/579/\")
+    (project_id . \"some%2Fproject%2Fpath\")
+    (iid . \"579\"))"
+  (pcase-let* ((`(,project_id ,iid)
+                (->>
+                 (s-chop-prefix (concat (s-chop-suffix "/" lab-host) "/") url)
+                 (s-split "/-/merge_requests/"))))
+    `((web_url . ,url)
+      (project_id . ,(url-hexify-string project_id))
+      (iid . ,(car (string-split iid "[/#]"))))))
 
 ;;;; TODOs:
 
