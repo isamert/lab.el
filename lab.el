@@ -569,10 +569,10 @@ This function simply checks for folders with `.git' under them."
 ;;;###autoload
 (defun lab-git-get-config (conf)
   "`git config --get CONF' wrapper."
-  (thread-last
-    (format "git config --get %s" conf)
-    shell-command-to-string
-    s-trim))
+  (s-trim
+   (with-temp-buffer
+     (call-process "git" nil t nil "config" "--get" conf)
+     (buffer-string))))
 
 ;;;###autoload
 (defun lab-git-remote-homepage ()
