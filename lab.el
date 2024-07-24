@@ -674,19 +674,26 @@ filesystem, that project will be simply skipped.
 
 When called interactively, it asks for a path to clone projects
 in (also see `lab-projects-directory') and also asks for a GitLab
-group path to fetch all projects of (also see `lab-group')."
+group path to fetch all projects of (also see `lab-group').
+
+You can interrupt the process by calling \\[lab-interrupt]."
   (interactive
    (let* ((root (read-directory-name "Path to clone projects in: " lab-projects-directory))
-          (groupped (seq-group-by
-                     (lambda (it) (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
-                     (lab-get-all-group-projects
-                      (read-string "Enter GitLab group path to clone all projects from: " lab-group))))
+          (gitlab-group (read-string "Enter GitLab group path to clone all projects from: " lab-group))
+          (groupped (prog2 (message "Please wait, getting project list...")
+                        (seq-group-by
+                         (lambda (it) (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
+                         (lab-get-all-group-projects gitlab-group))
+                      (message "Please wait, getting project list... Done...") ))
           ;; (existing (alist-get t groupped))
           (new (alist-get nil groupped)))
      (list root new)))
   (if-let ((current (car repositories)))
       (let* ((path (lab--path-join root (alist-get 'path_with_namespace current)))
              (project-parent (f-dirname path)))
+        (when lab--interrupt
+          (setq lab--interrupt nil)
+          (user-error "Pulling interrupted by user"))
         (mkdir project-parent t)
         (message "lab :: Cloning %s..." path)
         (lab-git-clone
