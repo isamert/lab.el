@@ -547,7 +547,7 @@ DIR is `lab-projects-directory' by default.
 This function simply checks for folders with `.git' under them."
   (thread-last
     (expand-file-name (or dir lab-projects-directory))
-    (format "fd . '%s' --type directory --maxdepth 6 --absolute-path")
+    (format "fd . \"%s\" --type directory --maxdepth 6 --absolute-path")
     (shell-command-to-string)
     (string-trim)
     (s-split "\n")
