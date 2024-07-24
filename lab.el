@@ -600,11 +600,11 @@ This function simply checks for folders with `.git' under them."
 (defun lab-git-origin-switch-to-ssh ()
   "Switch remote origin address to SSH from HTTPS."
   (interactive)
-  (if-let* ((https-origin (s-trim (shell-command-to-string "git config --get remote.origin.url")))
+  (if-let* ((https-origin (lab-git-get-config "remote.origin.url"))
             (it (s-match "https://\\(.*\\)\\.\\(com\\|net\\|org\\)/\\(.*\\)" https-origin))
             (ssh-origin (format "git@%s.%s:%s" (nth 1 it) (nth 2 it) (nth 3 it))))
       (progn
-        (shell-command-to-string (format "git remote set-url origin '%s'" ssh-origin))
+        (call-process "git" nil nil nil "remote" "set-url" "origin" ssh-origin)
         (message "Switched to SSH!"))
     (user-error "Already using SSH method or something is wrong with the current upstream address!")))
 
