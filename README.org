@@ -173,6 +173,30 @@ You can integrate the ~lab.el~ functions you frequently use into ~project.el~, l
 
 Now ~List pipelines~ and ~List merge requests~ actions will be added to ~project.el~ actions list and you'll be able to access them using ~C-x p M~ and ~C-x p P~ respectively.
 
+** org-mode integration
+
+~lab.el~ provides a dynamic block named ~lab-merge-requests~ which let's you list merge requests that matches your query. See the following example.
+
+#+begin_src org
+,#+begin: lab-merge-requests :type group :group "my" :limit 4 :state opened :headers ("state" "title" "author.username")
+,#+end
+#+end_src
+
+Hitting ~C-c C-c~ on this line will fetch the requests and display something like the following:
+
+#+begin_src org
+,#+begin: lab-merge-requests :type group :group "my" :limit 4 :state opened :headers ("state" "title" "author.username")
+| State  | Title                      | Author Username |
+|--------+----------------------------+-----------------|
+| opened | Update DB configuration    | john            |
+| opened | Add tsIn and tsOut headers | isamert         |
+| opened | Update media display type  | prot            |
+| opened | Lists offers by sellers    | rms             |
+,#+end
+#+end_src
+
+This dynamic block has various options that let you change how the merge requests are displayed and filtered. Refer to the documentation of the function ~org-dblock-write:lab-merge-requests~ to learn more.
+
 * Using as a GitLab API client
 
 You can use the provided ~lab--request~ function write your on [[https://docs.gitlab.com/ee/api/api_resources.html][GitLab API]] wrappers:
