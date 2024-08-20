@@ -493,6 +493,26 @@ function is called if given and the buffer is simply killed."
       obj
     (list obj)))
 
+;; TODO: Maybe let users customize this? Right now users can only
+;; select a project through `project-prompter' but maybe they want to
+;; select a project that is not on their local.
+(defun lab--read-project-id ()
+  "Select a project interactively and return it's project id."
+  (let ((default-directory (funcall project-prompter)))
+    (lab--project-path)))
+
+(defun lab--read-project-id-interactive-helper ()
+  "Return current project id or let user select a project and return its id.
+If `current-prefix-arg' is non-nil, force select a project first without
+checking current project.  Otherwise check if current project is a real
+GitLab project and then if so, return it's project id, else, ask user to
+select a project first."
+  (if current-prefix-arg
+      (lab--read-project-id)
+    (if-let ((project-id (lab--project-path t)))
+        project-id
+      (lab--read-project-id))))
+
 ;;;; Private git utilities
 
 (defun lab--git (cmd &rest options)
@@ -759,27 +779,34 @@ You can interrupt the process by calling \\[lab-interrupt]."
 
 ;;;; Core:
 
-(defun lab--project-path ()
+(defun lab--project-path (&optional safe?)
   "Return hexified project path for current git project.
 This is mostly used while doing an api call for the current
-project."
+project.
+
+If SAFE? is non-nil, then check if the extracted project id really
+matches with the `lab-host' and return nil if it does not.  Normally
+non-safe checks are used because the host and the ssh address of the
+host address may differ (see issue #5) but for some functions making
+this check makes sense without any significant loss of functionality."
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
-    (if (s-prefix? "http" remote-url)
+    (when (or (not safe?) (and safe? (s-contains? (url-host (url-generic-parse-url lab-host)) remote-url)))
+      (if (s-prefix? "http" remote-url)
+          (thread-last
+            remote-url
+            (s-chop-suffix ".git")
+            (s-chop-prefix lab-host)
+            (s-chop-prefix "/")
+            (s-chop-prefix "/")
+            (s-chop-prefix "/")
+            (s-trim)
+            (url-hexify-string))
         (thread-last
-          remote-url
+          (s-split-up-to ":" remote-url 1)
+          (cadr)
           (s-chop-suffix ".git")
-          (s-chop-prefix lab-host)
-          (s-chop-prefix "/")
-          (s-chop-prefix "/")
-          (s-chop-prefix "/")
           (s-trim)
-          (url-hexify-string))
-      (thread-last
-        (s-split-up-to ":" remote-url 1)
-        (cadr)
-        (s-chop-suffix ".git")
-        (s-trim)
-        (url-hexify-string)))))
+          (url-hexify-string))))))
 
 (cl-defun lab--request
     (endpoint
@@ -820,10 +847,12 @@ Examples:
       (request
         (thread-last
           (format "%s/api/v4/%s" lab-host endpoint)
-          (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string lab-group)))
-          (s-replace-regexp "#{project}" (lambda (&rest _) (or (ignore-errors
-                                                                 (lab--project-path))
-                                                               (user-error "You are not in a valid git project")))))
+          (s-replace-regexp "#{group}" (lambda (&rest _)
+                                         (url-hexify-string lab-group)))
+          (s-replace-regexp "#{project}" (lambda (&rest _)
+                                           (or (ignore-errors
+                                                 (lab--project-path))
+                                               (user-error "You are not in a valid git project")))))
         :type %type
         :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
         :parser (if %raw?
@@ -918,7 +947,7 @@ to given group.  Result is memoized after first call for
 (defun lab-list-project-merge-requests (&optional project)
   "List all open MRs that belongs to PROJECT.
 If it's omitted, currently open project is used."
-  (interactive)
+  (interactive (list (lab--read-project-id-interactive-helper)))
   (lab--within-current-project
    (lab-merge-request-select-and-act-on
     (lab--request
@@ -936,7 +965,7 @@ If PROJECT is nil, current git project is used."
 (defun lab-list-project-pipelines (&optional project)
   "List latest pipelines belonging to PROJECT.
 If PROJECT is nil,current git project is used."
-  (interactive)
+  (interactive (list (lab--read-project-id-interactive-helper)))
   (lab--within-current-project
    (lab-pipeline-select-and-act-on
     (lab--sort-by-latest-updated
@@ -946,7 +975,7 @@ If PROJECT is nil,current git project is used."
 (defun lab-act-on-last-project-pipeline (&optional project)
   "List latest pipelines belonging to PROJECT.
 If PROJECT is nil,current git project is used."
-  (interactive)
+  (interactive (list (lab--read-project-id-interactive-helper)))
   (lab--within-current-project
    (lab-pipeline-act-on
     (car (let ((lab-result-count 1))
@@ -1138,10 +1167,11 @@ recurring call, instead of a new watch request."
   "Get detailed information for JOB-ID in PROJECT-ID."
   (lab--request (format "projects/%s/jobs/%s" project-id job-id)))
 
+;;;###autoload
 (defun lab-act-on-last-failed-pipeline-job (&optional project-id)
   "List and act on last failed pipelines jobs for PROJECT.
 If PROJECT-ID is omitted, currently open project is used."
-  (interactive)
+  (interactive (list (lab--read-project-id-interactive-helper)))
   (let* ((failed?
           (lambda (it)
             (equal (downcase (alist-get 'status it)) "failed")))
