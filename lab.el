@@ -203,7 +203,7 @@ learn how the \"main\" branch is determined."
 
 (defconst lab--diff-buffer-name "*lab-diff*")
 
-(defconst lab--clone-bulk-buffer-name "*lab-clone*")
+(defconst lab--git-clone-buffer-name "*lab-clone*")
 
 (defconst lab--pull-bulk-buffer "*lab-pull-bulk*")
 
@@ -645,9 +645,9 @@ Also see `lab-after-git-clone-functions'."
   (make-directory dir t)
   (let* ((default-directory dir)
          (proc (start-process-shell-command
-                "*lab-clone*" lab--clone-bulk-buffer-name
+                "*lab-clone*" lab--git-clone-buffer-name
                 (format "git clone --quiet %s '%s'" (if shallow "--depth=1" "") url))))
-    (with-current-buffer lab--clone-bulk-buffer-name
+    (with-current-buffer lab--git-clone-buffer-name
       (goto-char (point-max))
       (insert (format ">> Cloning %s to %s...\n" url dir)))
     (set-process-sentinel
@@ -658,7 +658,7 @@ Also see `lab-after-git-clone-functions'."
                   (default-directory (concat (string-trim-right dir "/") "/" repo-name)))
              (when callback
                (funcall callback t)
-               (with-current-buffer lab--clone-bulk-buffer-name
+               (with-current-buffer lab--git-clone-buffer-name
                  (goto-char (point-max))
                  (insert (format ">> Cloning %s to %s...Done\n" url dir))))
              (unless callback
@@ -669,7 +669,7 @@ Also see `lab-after-git-clone-functions'."
                (seq-each #'funcall lab-after-git-clone-functions)))
          (if callback
              (progn
-               (with-current-buffer lab--clone-bulk-buffer-name
+               (with-current-buffer lab--git-clone-buffer-name
                  (goto-char (point-max))
                  (insert (format ">> Cloning %s to %s...Failed!\n" url dir)))
                (funcall callback nil))
@@ -714,16 +714,20 @@ You can interrupt the process by calling \\[lab-interrupt]."
         (when lab--interrupt
           (setq lab--interrupt nil)
           (user-error "Pulling interrupted by user"))
-        (mkdir project-parent t)
-        (message "lab :: Cloning %s..." path)
-        (lab-git-clone
-         (alist-get (lab--clone-url-path-selector) current)
-         project-parent
-         :callback
-         (lambda (success?)
-           (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
-           (lab-clone-bulk root (seq-drop repositories 1)))))
-    (message "lab :: Cloned all repositories. Check buffer %s for details." lab--clone-bulk-buffer-name)))
+        (if (file-exists-p path)
+            (progn
+              (message "lab :: Skipping %s as it already exists." path)
+              (lab-clone-bulk root (seq-drop repositories 1)))
+          (mkdir project-parent t)
+          (message "lab :: Cloning %s..." path)
+          (lab-git-clone
+           (alist-get (lab--clone-url-path-selector) current)
+           project-parent
+           :callback
+           (lambda (success?)
+             (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
+             (lab-clone-bulk root (seq-drop repositories 1))))))
+    (message "lab :: Cloned all repositories. Check buffer %s for details." lab--git-clone-buffer-name)))
 
 (async-defun lab-pull-bulk (&optional repositories)
   "Pull all REPOSITORIES.
@@ -808,6 +812,9 @@ this check makes sense without any significant loss of functionality."
           (s-trim)
           (url-hexify-string))))))
 
+;; FIXME: %collect-all? does not work with %async t
+
+;;;###autoload
 (cl-defun lab--request
     (endpoint
      &rest params
