@@ -729,7 +729,7 @@ You can interrupt the process by calling \\[lab-interrupt]."
              (lab-clone-bulk root (seq-drop repositories 1))))))
     (message "lab :: Cloned all repositories. Check buffer %s for details." lab--git-clone-buffer-name)))
 
-(async-defun lab-pull-bulk (&optional repositories)
+(async-defun lab-pull-bulk (&optional repositories interactive?)
   "Pull all REPOSITORIES.
 REPOSITORIES is a list of paths to different repositories.  When
 called interactively, it asks you for a path (also see
@@ -740,13 +740,14 @@ See the following variables to control the behavior of pulling:
 `lab-pull-bulk-switch-to-main', `lab-main-branch-name'.
 
 You can interrupt the process by calling \\[lab-interrupt]."
-  (interactive (list (lab-all-project-roots (read-directory-name "Path: " lab-projects-directory))))
+  (interactive (list (lab-all-project-roots (read-directory-name "Path: " lab-projects-directory)) t))
   (with-current-buffer (get-buffer-create lab--pull-bulk-buffer)
     (condition-case reason
         (let ((failed '())
               (index 0))
           (erase-buffer)
-          (switch-to-buffer-other-window (current-buffer))
+          (when interactive?
+            (switch-to-buffer-other-window (current-buffer)))
           (dolist (repository repositories)
             (insert (format ">> (%s/%s) Pulling %s...\n"
                             (1+ index)
