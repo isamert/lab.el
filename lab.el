@@ -704,7 +704,7 @@ You can interrupt the process by calling \\[lab-interrupt]."
                         (seq-group-by
                          (lambda (it) (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
                          (lab-get-all-group-projects gitlab-group))
-                      (message "Please wait, getting project list... Done...") ))
+                      (message "Please wait, getting project list...Done")))
           ;; (existing (alist-get t groupped))
           (new (alist-get nil groupped)))
      (list root new)))
