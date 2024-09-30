@@ -546,12 +546,15 @@ other uses."
       (let* ((default-directory repository)
              (branches (split-string (await (lab--git "branch" "--list")) "\n" t "[ \\*\t]+"))
              (current-branch (await (lab--git "branch" "--show-current")))
+             ;; NOTE: I didn't use `lab--find-main-branch' here as I
+             ;; need an async way of getting it instead of blocking
              (main-branch (seq-find
-                           (lambda (branch) (string-match (regexp-opt (lab--listify lab-main-branch-name) t) (or branch "NULL")))
+                           (lambda (branch)
+                             (string-match (regexp-opt (lab--listify lab-main-branch-name) t) (or branch "NULL")))
                            branches))
              (needs-checkout? (not (equal current-branch main-branch))))
         (await (lab--git "stash"))
-        (when needs-checkout?
+        (when (and lab-pull-bulk-switch-to-main needs-checkout?)
           (await (lab--git "checkout" main-branch)))
         (list 'success (await (lab--git "pull"))))
     (error
