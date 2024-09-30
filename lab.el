@@ -1288,9 +1288,10 @@ If GROUP is omitted, `lab-group' is used."
 (defun lab--find-main-branch ()
   "Find the main branch for current repository.
 Main branch is one the branch names listed in `lab-main-branch-name'."
-  (seq-find
-   (lambda (it) (member it (vc-git-branches)))
-   (lab--listify lab-main-branch-name)))
+  (let ((branches (vc-git-branches)))
+    (seq-find
+     (lambda (it) (member it branches))
+     (lab--listify lab-main-branch-name))))
 
 (declare-function markdown-mode "markdown-mode")
 (defun lab-create-merge-request ()
