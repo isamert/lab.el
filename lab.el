@@ -6,7 +6,7 @@
 ;; Version: 2.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
+;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1") (auth-source "23.1"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@
 (require 'ansi-color)
 (require 'async-await)
 (require 'promise)
+(require 'auth-source)
 
 ;; Customization:
 
@@ -816,6 +817,13 @@ this check makes sense without any significant loss of functionality."
           (s-trim)
           (url-hexify-string))))))
 
+(defun lab--retrieve-token ()
+  "Retrieve the GitLab API token to use."
+  (or lab-token
+      (when-let* ((entry (car (auth-source-search :host lab-host :max 1)))
+                  (secret-fn (plist-get entry :secret)))
+        (funcall secret-fn))))
+
 ;; FIXME: %collect-all? does not work with %async t
 
 ;;;###autoload
@@ -853,7 +861,10 @@ Examples:
   ;; url parameters
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
 
-  (let (json (all-items '()) (lastid t))
+  (let (json
+        (all-items '())
+        (lastid t)
+        (token (lab--retrieve-token)))
     (while lastid
       (request
         (thread-last
@@ -865,7 +876,7 @@ Examples:
                                                  (lab--project-path))
                                                (user-error "You are not in a valid git project")))))
         :type %type
-        :headers `((Authorization . ,(format "Bearer %s" lab-token)) ,@%headers)
+        :headers `((Authorization . ,(format "Bearer %s" token)) ,@%headers)
         :parser (if %raw?
                     #'buffer-string
                   (apply-partially

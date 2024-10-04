@@ -54,6 +54,16 @@ Set the following variables and you are good to go:
   (setq lab-group "YOUR-GROUP-ID")
 #+end_src
 
+Alternative you could retrieve your token using auth-source. Some auth-source
+backends support encryption. ej.
+
+#+begin_src elisp
+(setq auth-sources '("~/.authinfo.gpg"))
+
+;; And then store and entry with the following format in ~/.authinfo.gpg
+machine $lab-host password $lab-token
+#+end_src
+
 See ~M-x customize-group lab~ for all customization options.
 
 * Functionality summary
