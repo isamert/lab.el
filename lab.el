@@ -650,7 +650,7 @@ Also see `lab-after-git-clone-functions'."
   (let* ((default-directory dir)
          (proc (start-process-shell-command
                 "*lab-clone*" lab--git-clone-buffer-name
-                (format "git clone --quiet %s '%s'" (if shallow "--depth=1" "") url))))
+                (format "git clone --quiet %s \"%s\"" (if shallow "--depth=1" "") url))))
     (with-current-buffer lab--git-clone-buffer-name
       (goto-char (point-max))
       (insert (format ">> Cloning %s to %s...\n" url dir)))
