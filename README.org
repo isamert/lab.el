@@ -1,5 +1,6 @@
 #+TITLE: lab.el
 
+[[https://stable.melpa.org/#/lab][file:https://stable.melpa.org/packages/lab-badge.svg]]
 [[https://melpa.org/#/lab][file:https://melpa.org/packages/lab-badge.svg]]
 
 /lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted).
