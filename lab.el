@@ -658,7 +658,7 @@ Also see `lab-after-git-clone-functions'."
      proc
      (lambda (p _e)
        (if (= 0 (process-exit-status p))
-           (let* ((repo-name (file-name-base url))
+           (let* ((repo-name (file-name-nondirectory (string-trim-right url "\\.git")))
                   (default-directory (concat (string-trim-right dir "/") "/" repo-name)))
              (when callback
                (funcall callback t)
