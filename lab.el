@@ -187,6 +187,13 @@ learn how the \"main\" branch is determined."
   :group 'lab
   :type 'boolean)
 
+(defcustom lab-use-consult-if-possible t
+  "Use `consult' for some flows, like project search.
+Setting this variable to t does not affect anything if you
+haven't installed consult."
+  :group 'lab
+  :type 'boolean)
+
 ;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
@@ -513,6 +520,64 @@ select a project first."
     (if-let ((project-id (lab--project-path t)))
         project-id
       (lab--read-project-id))))
+
+(defconst lab--text-property-prefix "lab-")
+
+(defun lab--with-text-properties (str &rest props)
+  (let ((str-copy (copy-sequence str)))
+    (add-text-properties
+     0 1
+     (seq-mapcat
+      #'identity
+      (seq-map
+       (lambda (prop)
+         (cons (intern (concat lab--text-property-prefix
+                               (string-trim-left (symbol-name (car prop)) ":")))
+               (cdr prop)))
+       (seq-partition props 2)))
+     str-copy)
+    str-copy))
+
+(defun lab--get-text-property (str prop)
+  (get-text-property
+   0
+   (intern (concat lab--text-property-prefix
+                   (string-trim-left (symbol-name prop) ":")))
+   str))
+
+;;;; Consult integration
+
+(declare-function consult--read "consult")
+(declare-function consult--async-pipeline "consult")
+(declare-function consult--async-refresh "consult")
+(declare-function consult--async-indicator "consult")
+(declare-function consult--async-throttle "consult")
+(declare-function consult--async-split "consult")
+
+(defun lab--consult-async-generator (request mapper)
+  (lambda (next)
+    (lambda (action)
+      (pcase action
+        ((pred stringp)
+         (when (not (string-empty-p (string-trim action)))
+           (funcall
+            request
+            action
+            (lambda (result)
+              (funcall next 'flush)
+              (funcall next (funcall mapper result))))))
+        (_ (funcall next action))))))
+
+(defun lab--consult-async-wrapper (async)
+  (consult--async-pipeline
+   (consult--async-split)
+   (consult--async-throttle)
+   async
+   (consult--async-indicator)
+   (consult--async-refresh)))
+
+(defun lab--use-consult? ()
+  (and lab-use-consult-if-possible (require 'consult nil t)))
 
 ;;;; Private git utilities
 
