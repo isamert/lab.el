@@ -1,0 +1,9 @@
+* v2.2.2
+
+- Add ~lab-search-project~.
+  - If consult is present, then this function works interactively (you type and search gets updated).
+- Introduce ~lab-use-consult-if-possible~ to manage consult integration.
+
+* Pre 2.2.2
+
+No CHANGELOG were present before this point :(
