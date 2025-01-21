@@ -72,7 +72,7 @@ See ~M-x customize-group lab~ for all customization options.
 Here is a quick rundown of features ~lab.el~ provides. I've included entry functions inside parenthesis but some of the functionality is accessed through other listing functions.
 
 - Projects ::
-  - List projects belonging to you or a group (~lab-list-all-{owned,group}-projects~), and act on these projects.
+  - List projects belonging to you or a group (~lab-list-all-{owned,group}-projects~), and act on these projects. Search projects using ~lab-search-project~ (optionally with [[https://github.com/minad/consult][consult]] live search support).
     - Open them in browser.
     - Clone single project or do a bulk cloning.
     - List merge requests of given project.
@@ -122,6 +122,12 @@ Other functions work in similar fashion, where you list something (projects/pipe
 [[file:https://user-images.githubusercontent.com/8031017/204106593-3acdaffc-a1a4-4115-9fd8-339d2ac3930f.png]]
 
 * Extras/tips
+
+** Embark and Consult integration
+
+If you have [[https://github.com/minad/consult][consult]] and [[https://github.com/oantolin/embark][embark]] installed on your Emacs, ~lab.el~ will automatically integrate itself with them. If you have ~consult~ installed, you get live search feature on some of the commands, like ~lab-search-project~.  With embark, you can use ~(embark-act)~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions (possibly using ~embark-act-all~) as the primary feature of embark, /listing actions of a target/, is already covered by /lab.el/.
+
+Installing these packages are highly recommended.
 
 ** Keybindings
 
