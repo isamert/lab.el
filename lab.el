@@ -1068,6 +1068,39 @@ If PROJECT is nil,current git project is used."
     (car (let ((lab-result-count 1))
            (lab-get-project-pipelines project))))))
 
+;;;###autoload
+(defun lab-search-project ()
+  "Search in all GitLab projects."
+  (interactive)
+  ;; Need to generalize this pattern if I start using consult more in
+  ;; this package
+  (lab-project-act-on
+   (if (lab--use-consult?)
+       (consult--read
+        (lab--consult-async-generator
+         (lambda (action on-result)
+           (lab--request "projects" :search action :%async t :%success on-result))
+         (lambda (result)
+           (mapcar
+            (lambda (cand)
+              (lab--with-text-properties (lab--format-project-title cand) :item cand))
+            result)))
+        :lookup
+        (lambda (selected candidates &rest _)
+          (lab--get-text-property (car (member selected candidates)) :item))
+        :prompt "Select project: "
+        :category 'lab-project
+        :sort nil
+        :require-match t
+        :async-wrap #'lab--consult-async-wrapper)
+     (let ((input (read-string "Search project: ")))
+       (lab--completing-read-object
+        "Search project: "
+        (lab--request "projects" :search input)
+        :formatter #'lab--format-project-title
+        :category 'lab-project
+        :sort? nil)))))
+
 ;;;; Pipelines:
 
 (lab--define-actions-for pipeline
