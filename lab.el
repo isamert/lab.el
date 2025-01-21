@@ -501,6 +501,8 @@ function is called if given and the buffer is simply killed."
       obj
     (list obj)))
 
+(defvar project-prompter)
+
 ;; TODO: Maybe let users customize this? Right now users can only
 ;; select a project through `project-prompter' but maybe they want to
 ;; select a project that is not on their local.
