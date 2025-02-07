@@ -935,7 +935,9 @@ Examples:
     (while lastid
       (request
         (thread-last
-          (format "%s/api/v4/%s" lab-host endpoint)
+          (if (s-prefix? "http" endpoint)
+              endpoint
+            (format "%s/api/v4/%s" lab-host endpoint))
           (s-replace-regexp "#{group}" (lambda (&rest _)
                                          (url-hexify-string lab-group)))
           (s-replace-regexp "#{project}" (lambda (&rest _)
