@@ -1429,6 +1429,8 @@ enter additional environment variables interactively."
   :keymap
   ((?o "Open"
        (lab--open-web-url .web_url))
+   (?s "Show"
+       (lab-merge-request-show .web_url))
    (?c "Copy url"
        (kill-new .web_url))
    (?m "Mark as ready"
@@ -1613,6 +1615,129 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     `((web_url . ,url)
       (project_id . ,(url-hexify-string project_id))
       (iid . ,(car (string-split iid "[/#]"))))))
+
+;;;; Code review stuff
+
+(defun lab--all-comments-in-buffer ()
+  (seq-filter
+   (lambda (ov) (overlay-get ov 'lab-comment))
+   (overlays-in (point-min) (point-max))))
+
+(defun lab--comment-overlay-at-point ()
+  (seq-find
+   (lambda (ov) (overlay-get ov 'lab-comment))
+   (overlays-at (point))))
+
+(defun lab--mark-comment-region (ov)
+  (goto-char (overlay-get ov 'lab-comment-beginning))
+  (set-mark-command nil)
+  (goto-char (overlay-get ov 'lab-comment-end))
+  (exchange-point-and-mark))
+
+(defun lab-merge-request-show (url)
+  (interactive "sURL: ")
+  (let ((diffs (let-alist (lab--parse-merge-request-url url)
+                 (lab--request
+                  (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)))))
+    (let ((inhibit-read-only t))
+      (with-current-buffer (get-buffer-create "*lab-diffs*")
+        (erase-buffer)
+        (dolist (diff diffs)
+          (let-alist diff
+            (let ((hunk (concat
+                         (format "diff --git a/%s b/%s\n" .old_path .new_path)
+                         "--- a/" .old_path "\n"
+                         "+++ b/" .new_path "\n"
+                         .diff)))
+              (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
+              (insert hunk))))
+        (goto-char 0)
+        (read-only-mode)
+        (diff-mode)
+        (switch-to-buffer "*lab-diffs*")))))
+
+;; TODO: Remove quick-peek dependencies
+(cl-defun lab-add-comment (&key (init "") on-accept)
+  (interactive)
+  (let* ((oldwin (current-window-configuration))
+         (beg (if (use-region-p)
+                  (save-excursion
+                    (goto-char (region-beginning))
+                    (point-at-bol))
+                (point-at-bol)))
+         (end (if (use-region-p)
+                  (save-excursion
+                    (goto-char (region-end))
+                    (forward-char -1)
+                    (point-at-eol))
+                (point-at-eol)))
+         (info (if (use-region-p)
+                   (format "↑ %s lines ↑" (count-lines beg end))
+                 ""))
+         (buffer (current-buffer)))
+    (lab--user-input
+     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :parser #'buffer-string
+     :init init
+     :on-reject
+     (lambda (&rest _)
+       (set-window-configuration oldwin))
+     :on-accept
+     (lambda (_ input)
+       (set-window-configuration oldwin)
+       (with-current-buffer buffer
+         (deactivate-mark)
+         (let ((ov (save-excursion
+                     (goto-char end)
+                     (make-overlay beg (1+ (point-at-eol))))))
+           (save-excursion
+             (goto-char (overlay-start ov))
+             (let* ((offset
+                     (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
+                    (str
+                     (quick-peek--prepare-overlay-string
+                      (concat (propertize info 'face '(:slant italic)) "\n" input) offset)))
+               (overlay-put ov 'lab-comment t)
+               (overlay-put ov 'lab-comment-input input)
+               (overlay-put ov 'lab-comment-beginning beg)
+               (overlay-put ov 'lab-comment-end end)
+               (overlay-put ov 'after-string str)))
+           (when on-accept
+             (funcall on-accept ov))))))))
+
+(defun lab-send-review ()
+  (interactive)
+  (dolist (ov (lab--all-comments-in-buffer))
+    (unless (overlay-get ov 'lab-comment-sent)
+      (message "comment :: %s" (overlay-get ov 'lab-comment-input))
+      (overlay-put ov 'lab-comment-sent t)
+      ;; TODO Generate the payload and make the request
+      )))
+
+(defun lab-edit-comment (ov)
+  (interactive (list (lab--comment-overlay-at-point)))
+  (when ov
+    (lab--mark-comment-region ov)
+    (lab-add-comment
+     :init (overlay-get ov 'lab-comment-input)
+     :on-accept
+     (lambda (_ov)
+       (lab-remove-comment ov)))))
+
+(defun lab-remove-comment (ov)
+  (interactive (list (lab--comment-overlay-at-point)))
+  (when ov
+    (delete-overlay ov)
+    (message "lab :: Comment removed")))
+
+(defun lab-remove-all-comments ()
+  (interactive)
+  (let ((i 0))
+    (dolist (ov (lab--all-comments-in-buffer))
+      (delete-overlay ov)
+      (setq i (1+ i)))
+    (when (> i 0)
+      (message "lab :: %s comment(s) removed" i))))
 
 ;;;; TODOs:
 
