@@ -1711,7 +1711,34 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     (unless (overlay-get ov 'lab-comment-sent)
       (message "comment :: %s" (overlay-get ov 'lab-comment-input))
       (overlay-put ov 'lab-comment-sent t)
-      ;; TODO Generate the payload and make the request
+
+      ;; ((diff . "...")
+      ;;  (new_path . "config/config.yaml") (old_path . "config/config.yaml")
+      ;;  (a_mode . "100644") (b_mode . "100644") (new_file . :false)
+      ;;  (renamed_file . :false)
+      ;;  (deleted_file . :false))
+      ;; https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#create-a-new-thread-in-the-merge-request-diff
+      ;; 1. Get the latest merge request version:
+      ;;     curl --header "PRIVATE-TOKEN: <your_access_token>" "https://gitlab.example.com/api/v4/projects/5/merge_requests/11/versions"
+      ;; 2. Note the details of the latest version, which is listed first in the response array.
+      (let* ((line (thing-at-point 'line))
+             (unchanged-line? (s-matches? "^[^-+]" line)))
+        (let-alist (get-text-property (point) 'lab-diff)
+          `((body . "COMMENT_ITSELF")
+            (position . ((base_sha . "TODO")  ; Base commit SHA in the source branch
+                         (start_sha . "TODO") ; SHA referencing commit in target branch
+                         (head_sha . "TODO")  ; SHA referencing HEAD of this merge request
+                         (position_type . "text")
+                         (old_path . .old_path)
+                         (new_path . .new_path)
+                         ,@(when (or (s-prefix? "+" line) unchanged-line?)
+                             `((new_line . "TODO")))
+                         ,@(when (or (s-prefix? "-" line) unchanged-line?)
+                             `((old_line . "TODO")))
+                         ;; TODO: line_range's seems complex. Maybe implement it later?
+                         ;; (line_range . "TODO")
+                         )))))
+      ;; TODO: (lab--request "projects/:id/merge_requests/:merge_request_iid/discussions")
       )))
 
 (defun lab-edit-comment (ov)
