@@ -1635,13 +1635,46 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (goto-char (overlay-get ov 'lab-comment-end))
   (exchange-point-and-mark))
 
+(defun lab--find-line-number-at (pos &optional old?)
+  (save-match-data
+    (save-excursion
+      (goto-char pos)
+      (beginning-of-line)
+      (let* ((pt (point))
+             (start (save-excursion (diff-beginning-of-hunk)))
+             (end (save-excursion (diff-end-of-hunk)))
+             (hunk-part (buffer-substring-no-properties start pt))
+             (lines (s-lines hunk-part))
+             start-line)
+        (setq start-line
+              (string-to-number
+               (nth 1 (s-match (format "%s\\([0-9]+\\)," (if old? "^@@ -" " \\+")) (car lines)))))
+        (+
+         -1
+         start-line
+         (length
+          (seq-filter
+           (lambda (l) (not (s-prefix? (if old? "+" "-") l)))
+           (seq-drop lines 1))))))))
+
+(defvar-local lab--merge-request-last-version nil)
+(defvar-local lab--merge-request nil)
+
 (defun lab-merge-request-show (url)
   (interactive "sURL: ")
-  (let ((diffs (let-alist (lab--parse-merge-request-url url)
-                 (lab--request
-                  (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)))))
+  (let* ((mr (lab--parse-merge-request-url url))
+         (diffs
+          (let-alist mr
+            (lab--request
+             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid))))
+         (versions
+          (let-alist mr
+            (lab--request
+             (format "projects/%s/merge_requests/%s/versions" .project_id .iid)))))
     (let ((inhibit-read-only t))
+      ;; TODO: Use different buffer per MR.
       (with-current-buffer (get-buffer-create "*lab-diffs*")
+        (lab-remove-all-comments)
         (erase-buffer)
         (dolist (diff diffs)
           (let-alist diff
@@ -1655,7 +1688,9 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
         (goto-char 0)
         (read-only-mode)
         (diff-mode)
-        (switch-to-buffer "*lab-diffs*")))))
+        (switch-to-buffer "*lab-diffs*")
+        (setq-local lab--merge-request-last-version (car versions))
+        (setq-local lab--merge-request mr)))))
 
 ;; TODO: Remove quick-peek dependencies
 (cl-defun lab-add-comment (&key (init "") on-accept)
@@ -1710,37 +1745,33 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (interactive)
   (dolist (ov (lab--all-comments-in-buffer))
     (unless (overlay-get ov 'lab-comment-sent)
-      (message "comment :: %s" (overlay-get ov 'lab-comment-input))
-      (overlay-put ov 'lab-comment-sent t)
-
-      ;; ((diff . "...")
-      ;;  (new_path . "config/config.yaml") (old_path . "config/config.yaml")
-      ;;  (a_mode . "100644") (b_mode . "100644") (new_file . :false)
-      ;;  (renamed_file . :false)
-      ;;  (deleted_file . :false))
-      ;; https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#create-a-new-thread-in-the-merge-request-diff
-      ;; 1. Get the latest merge request version:
-      ;;     curl --header "PRIVATE-TOKEN: <your_access_token>" "https://gitlab.example.com/api/v4/projects/5/merge_requests/11/versions"
-      ;; 2. Note the details of the latest version, which is listed first in the response array.
       (let* ((line (thing-at-point 'line))
-             (unchanged-line? (s-matches? "^[^-+]" line)))
-        (let-alist (get-text-property (point) 'lab-diff)
-          `((body . "COMMENT_ITSELF")
-            (position . ((base_sha . "TODO")  ; Base commit SHA in the source branch
-                         (start_sha . "TODO") ; SHA referencing commit in target branch
-                         (head_sha . "TODO")  ; SHA referencing HEAD of this merge request
-                         (position_type . "text")
-                         (old_path . .old_path)
-                         (new_path . .new_path)
-                         ,@(when (or (s-prefix? "+" line) unchanged-line?)
-                             `((new_line . "TODO")))
-                         ,@(when (or (s-prefix? "-" line) unchanged-line?)
-                             `((old_line . "TODO")))
-                         ;; TODO: line_range's seems complex. Maybe implement it later?
-                         ;; (line_range . "TODO")
-                         )))))
-      ;; TODO: (lab--request "projects/:id/merge_requests/:merge_request_iid/discussions")
-      )))
+             (unchanged-line? (s-matches? "^ " line))
+             ;; TODO: Using lab-comment-end here because we do not support ranges right now
+             (pt (overlay-get ov 'lab-comment-end))
+             (diff (get-text-property (point) 'lab-diff))
+             (data
+              (let-alist lab--merge-request-last-version
+                `((body . ,(overlay-get ov 'lab-comment-input))
+                  (position . ((base_sha . ,.base_commit_sha)
+                               (start_sha . ,.start_commit_sha)
+                               (head_sha . ,.head_commit_sha)
+                               (position_type . "text")
+                               (old_path . ,(alist-get 'old_path diff))
+                               (new_path . ,(alist-get 'new_path diff))
+                               ;; (line_range . "TODO")
+                               ,@(when (or (s-prefix? "+" line) unchanged-line?)
+                                   `((new_line . ,(lab--find-line-number-at pt))))
+                               ,@(when (or (s-prefix? "-" line) unchanged-line?)
+                                   `((old_line . ,(lab--find-line-number-at pt :old))))))))))
+        (let-alist lab--merge-request
+          (when (lab--request
+                 (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                 :%type "POST"
+                 :%headers '(("Content-Type" . "application/json"))
+                 :%data (json-encode data))
+            (overlay-put ov 'lab-comment-sent t)))))))
+
 
 (defun lab-edit-comment (ov)
   (interactive (list (lab--comment-overlay-at-point)))
