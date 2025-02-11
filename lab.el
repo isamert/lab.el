@@ -1438,7 +1438,7 @@ enter additional environment variables interactively."
               (lab--request
                (format "projects/%s/merge_requests/%s" .project_id .iid)
                :%type "PUT"
-               :%data (list :title (s-chop-prefixes '("WIP: " "Draft: ") .title)))))
+               :%data `((title . ,(s-chop-prefixes '("WIP: " "Draft: ") .title))))))
          (seq-each
           (lambda (it) (funcall it result))
           lab-after-merge-request-mark-ready-functions)))
@@ -1573,6 +1573,7 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
             lab-after-merge-requests-create-functions)
            (lab--open-web-url (alist-get 'web_url result))))))))
 
+;; TODO: Test if this works or not after the change
 (defun lab--parse-merge-request-buffer ()
   (goto-char (point-min))
   (let* ((yaml (when (search-forward-regexp lab--regex-yaml-metadata-border nil t)
@@ -1588,11 +1589,11 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                                       (and (lab--length= it 2)
                                            (not (s-blank? (car it))))))
                         (mapcar (lambda (it)
-                                  (list (intern (concat ":" (car it)))
-                                        (lab--deserialize-yaml-value (cadr it)))))
-                        (apply #'seq-concatenate 'list)))))
-    (map-insert yaml-data
-                :description (s-trim (buffer-substring-no-properties (point) (point-max))))))
+                                  (cons (intern (car it))
+                                        (lab--deserialize-yaml-value (cadr it)))))))))
+    (map-insert
+     yaml-data
+     'description (s-trim (buffer-substring-no-properties (point) (point-max))))))
 
 (defun lab--parse-merge-request-url (url)
   "Parse given merge request URL into a merge request object.
@@ -1962,13 +1963,13 @@ PARAMS is an plist where the keys are:
 (defun lab--serialize-yaml-value (val)
   (pcase val
     ((or 't "t" "true" "yes") "true")
-    ((or "false" "no" :json-false 'nil) "false")
+    ((or "false" "no" :json-false :false 'nil) "false")
     (_ val)))
 
 (defun lab--deserialize-yaml-value (val)
   (pcase val
     ((or 't "t" "true" "yes") t)
-    ((or "false" "nil" "no" ":json-false") "false")
+    ((or "false" "nil" "no" ":json-false" ":false") "false")
     (_ val)))
 
 (defun lab--time-ago (past)
