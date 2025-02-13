@@ -1158,7 +1158,7 @@ Send a notification if it's finished, failed or waiting for a
 manual action.  RERUN? is used to indicate that this is a
 recurring call, instead of a new watch request."
   (interactive "sPipeline URL: ")
-  (let* ((data (s-match "https://.*\\.com/\\(.*\\)/-/pipelines/\\([0-9]+\\)" url))
+  (let* ((data (s-match (rx (literal lab-host) (regexp "/\\(.*\\)/-/pipelines/\\([0-9]+\\)")) url))
          (project (nth 1 data))
          (project-hexified (url-hexify-string project))
          (pipeline (nth 2 data)))
