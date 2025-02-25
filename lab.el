@@ -1657,16 +1657,31 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
            (lambda (l) (not (s-prefix? (if old? "+" "-") l)))
            (seq-drop lines 1))))))))
 
+(defun lab--format-hunk (hunk)
+  (let-alist hunk
+    (concat
+     (format "diff --git a/%s b/%s\n" .old_path .new_path)
+     "--- a/" .old_path "\n"
+     "+++ b/" .new_path "\n"
+     .diff)))
+
 (defvar-local lab--merge-request-last-version nil)
 (defvar-local lab--merge-request nil)
+(defvar-local lab--merge-request-diffs nil)
+
+
+(defvar lab-merge-request-history nil)
 
 (defun lab-merge-request-show (url)
-  (interactive "sURL: ")
+  (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (diffs
+          ;; GET /projects/:id/merge_requests/:merge_request_iid/raw_diffs
+          ;; ^ This retrieves the raw diff directly but it's added on GitLab v17.9
           (let-alist mr
             (lab--request
-             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid))))
+             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid
+                     :%collect-all? t))))
          (versions
           (let-alist mr
             (lab--request
@@ -1677,20 +1692,16 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
         (lab-remove-all-comments)
         (erase-buffer)
         (dolist (diff diffs)
-          (let-alist diff
-            (let ((hunk (concat
-                         (format "diff --git a/%s b/%s\n" .old_path .new_path)
-                         "--- a/" .old_path "\n"
-                         "+++ b/" .new_path "\n"
-                         .diff)))
-              (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
-              (insert hunk))))
+          (let ((hunk (lab--format-hunk diff)))
+            (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
+            (insert hunk)))
         (goto-char 0)
         (read-only-mode)
         (diff-mode)
         (switch-to-buffer "*lab-diffs*")
         (setq-local lab--merge-request-last-version (car versions))
-        (setq-local lab--merge-request mr)))))
+        (setq-local lab--merge-request mr)
+        (setq-local lab--merge-request-diffs diffs)))))
 
 ;; TODO: Remove quick-peek dependencies
 (cl-defun lab-add-comment (&key (init "") on-accept)
