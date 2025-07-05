@@ -1639,6 +1639,11 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
       (project_id . ,(url-hexify-string project_id))
       (iid . ,(car (string-split iid "[/#]"))))))
 
+(defun lab--pretty-mr-name (mr)
+  "Return a name like project-name#mr-id for MR.
+MR is an object created by `lab--parse-merge-request-url'."
+  (let-alist mr (format "%s#%s" (url-unhex-string .project_id) .iid)))
+
 ;;;; Code review stuff
 
 (defun lab--all-comments-in-buffer ()
@@ -1726,7 +1731,7 @@ In this buffer you can use the following functions:
             (lab--request
              (format "projects/%s/merge_requests/%s/versions" .project_id .iid)))))
     (let ((inhibit-read-only t)
-          (buffer-name (let-alist mr (format "*lab-diff: %s#%s*" (url-unhex-string .project_id) .iid))))
+          (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
         (lab-remove-all-comments)
         (erase-buffer)
@@ -1829,7 +1834,7 @@ In this buffer you can use the following functions:
                      (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
                      :%type "POST"
                      :%headers '(("Content-Type" . "application/json"))
-                     :%data (json-encode (im-tap data)))
+                     :%data (json-encode data))
                 (overlay-put ov 'lab-comment-sent t)))))))))
 
 (defun lab-edit-comment (ov)
