@@ -1756,32 +1756,36 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
   (interactive)
   (dolist (ov (lab--all-comments-in-buffer))
     (unless (overlay-get ov 'lab-comment-sent)
-      (let* ((line (thing-at-point 'line))
-             (unchanged-line? (s-matches? "^ " line))
-             ;; TODO: Using lab-comment-end here because we do not support ranges right now
-             (pt (overlay-get ov 'lab-comment-end))
-             (diff (get-text-property (point) 'lab-diff))
-             (data
-              (let-alist lab--merge-request-last-version
-                `((body . ,(overlay-get ov 'lab-comment-input))
-                  (position . ((base_sha . ,.base_commit_sha)
-                               (start_sha . ,.start_commit_sha)
-                               (head_sha . ,.head_commit_sha)
-                               (position_type . "text")
-                               (old_path . ,(alist-get 'old_path diff))
-                               (new_path . ,(alist-get 'new_path diff))
-                               ;; (line_range . "TODO")
-                               ,@(when (or (s-prefix? "+" line) unchanged-line?)
-                                   `((new_line . ,(lab--find-line-number-at pt))))
-                               ,@(when (or (s-prefix? "-" line) unchanged-line?)
-                                   `((old_line . ,(lab--find-line-number-at pt :old))))))))))
-        (let-alist lab--merge-request
-          (when (lab--request
-                 (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                 :%type "POST"
-                 :%headers '(("Content-Type" . "application/json"))
-                 :%data (json-encode data))
-            (overlay-put ov 'lab-comment-sent t)))))))
+      (let (;; TODO: Using lab-comment-end here because we do not
+            ;; support ranges right now
+            (pt (prog1 (overlay-get ov 'lab-comment-end)
+                  (goto-char (overlay-get ov 'lab-comment-end)))))
+        (save-excursion
+          (goto-char pt)
+          (let* ((line (thing-at-point 'line))
+                 (unchanged-line? (s-matches? "^ " line))
+                 (diff (get-text-property (point) 'lab-diff))
+                 (data
+                  (let-alist lab--merge-request-last-version
+                    `((body . ,(overlay-get ov 'lab-comment-input))
+                      (position . ((base_sha . ,.base_commit_sha)
+                                   (start_sha . ,.start_commit_sha)
+                                   (head_sha . ,.head_commit_sha)
+                                   (position_type . "text")
+                                   (old_path . ,(alist-get 'old_path diff))
+                                   (new_path . ,(alist-get 'new_path diff))
+                                   ;; (line_range . "TODO")
+                                   ,@(when (or (s-prefix? "+" line) unchanged-line?)
+                                       `((new_line . ,(lab--find-line-number-at pt))))
+                                   ,@(when (or (s-prefix? "-" line) unchanged-line?)
+                                       `((old_line . ,(lab--find-line-number-at pt :old))))))))))
+            (let-alist lab--merge-request
+              (when (lab--request
+                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                     :%type "POST"
+                     :%headers '(("Content-Type" . "application/json"))
+                     :%data (json-encode (im-tap data)))
+                (overlay-put ov 'lab-comment-sent t)))))))))
 
 
 (defun lab-edit-comment (ov)
