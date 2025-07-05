@@ -1464,6 +1464,10 @@ enter additional environment variables interactively."
          (seq-each
           (lambda (it) (funcall it result))
           lab-after-merge-request-mark-ready-functions)))
+   (?d "Diff & Review"
+       (lab-merge-request-diff .web_url))
+   (?t "Threads & overview"
+       (lab-merge-request-overview .web_url))
    (?r "Rebase"
        ;; TODO add a function that rebases merge request with given
        ;; URL and write this in terms of the new function
@@ -1861,6 +1865,125 @@ In this buffer you can use the following functions:
       (setq i (1+ i)))
     (when (> i 0)
       (message "lab :: %s comment(s) removed" i))))
+
+;;;; Merge request overview
+
+;; TODO: List all previous notes: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#list-project-merge-request-discussion-items
+;; TODO: Add message to an existing threads: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#add-note-to-existing-merge-request-thread
+;; TODO: Modify an existing note: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#add-note-to-existing-merge-request-thread
+;; TODO: Delete an existing note: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#delete-a-merge-request-thread-note
+;; TODO: Resolve a thread: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#resolve-a-merge-request-thread
+
+(defun lab--merge-request-threads (mr)
+  (let-alist mr
+    (lab--request
+     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+     :%collect-all? t)))
+
+(defun lab--find-mr-version-for-diff-pos (diff-pos mr-versions)
+  (seq-find
+   (lambda (mr-ver)
+     (and (equal (alist-get 'base_sha diff-pos) (alist-get 'base_commit_sha mr-ver))
+          (equal (alist-get 'start_sha diff-pos) (alist-get 'start_commit_sha mr-ver))
+          (equal (alist-get 'head_sha diff-pos) (alist-get 'head_commit_sha mr-ver))))
+   mr-versions))
+
+(defun lab--convert-md-to-org (body)
+  "Basic conversion from Markdown to Org syntax.
+  This only does what's required for the merge request thread messages."
+  (thread-last
+    (s-replace-regexp "<[^>]+>" "" body)
+    (replace-regexp-in-string
+     "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
+     (format "[[%s/\\2][\\1]]" lab-host))))
+
+(defun lab-merge-request-overview (url)
+  "Display merge request threads with diffs and notes in an org-mode buffer.
+
+Fetches merge request versions, threads, and their associated diff notes from
+a GitLab merge request URL. Shows the threads with individual notes and
+diff notes, formatting the diffs as org-mode source blocks. Marks resolvable
+threads as TODO or DONE based on their resolved status, and includes
+author information and timestamps."
+  (interactive "sURL: ")
+  (let ((mr (lab--parse-merge-request-url url)))
+    (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
+      (erase-buffer)
+      (let* ((diffs (make-hash-table))
+             (mr-versions (let-alist mr
+                            (lab--request
+                             (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
+             (mr-threads (lab--merge-request-threads mr))
+             (diff-positions (thread-last
+                               mr-threads
+                               (seq-map (lambda (thread) (car (alist-get 'notes thread))))
+                               (seq-filter (lambda (note) (equal "DiffNote" (alist-get 'type note))))
+                               (seq-map (lambda (note) (map-insert (alist-get 'position note) 'comment_id (alist-get 'id note))))))
+             (diff-versions (delete-dups
+                             (seq-map
+                              (lambda (diff-pos)
+                                (alist-get 'id (lab--find-mr-version-for-diff-pos diff-pos mr-versions)))
+                              diff-positions)))
+             ;; TODO: Get them in parallel?
+             (diff-versions-map (seq-map
+                                 (lambda (diff-version)
+                                   (cons
+                                    diff-version
+                                    (let-alist mr
+                                      (lab--request
+                                       (format "projects/%s/merge_requests/%s/versions/%s" .project_id .iid diff-version)))))
+                                 diff-versions)))
+        ;; TODO: Add MR summary, real MR title etc.
+        (insert (format "#+TITLE: GitLab: %s\n\n" (lab--pretty-mr-name mr)))
+        (insert (format "[[%s][Open at web]]\n" url))
+        (insert (format "[[elisp:(lab-merge-request-diff \"%s\")][Diff & review]]\n\n" url))
+        (dolist (thread mr-threads)
+          (let* ((invidual? (alist-get 'individual_note thread))
+                 (first-note (car (alist-get 'notes thread))))
+            (when invidual?
+              (let-alist first-note
+                (insert "* " "[[" .author.web_url "][" .author.username "]]" " " (lab--convert-md-to-org .body) "\n\n")))
+            (unless invidual?
+              (insert "*"
+                      (pcase (list (alist-get 'resolvable first-note)
+                                   (alist-get 'resolved first-note))
+                        ('(t t) " DONE")
+                        ('(t nil) " TODO")
+                        (otherwise ""))
+                      " Thread\n")
+              (insert ":PROPERTIES:" "\n"
+                      ":ID: " (alist-get 'id thread) "\n"
+                      ":END:" "\n")
+              (seq-do-indexed
+               (lambda (note idx)
+                 (let-alist note
+                   (when (and (equal .type "DiffNote") (eq idx 0))
+                     (let* ((mr-ver (alist-get 'id (lab--find-mr-version-for-diff-pos .position mr-versions)))
+                            (diff-ver (alist-get mr-ver diff-versions-map)))
+                       (insert "#+begin_src diff\n")
+                       (insert (lab--format-hunk
+                                (seq-find
+                                 (lambda (diff)
+                                   (and
+                                    (equal (alist-get 'old_path diff) (alist-get 'old_path .position))
+                                    (equal (alist-get 'new_path diff) (alist-get 'new_path .position))))
+                                 (alist-get 'diffs diff-ver))))
+                       (insert "\n#+end_src\n\n-----\n\n")))
+                   (let ((created-at (format-time-string "%Y-%m-%d %a %H:%M" (date-to-time .created_at)))
+                         (updated-at (format-time-string "%Y-%m-%d %a %H:%M" (date-to-time .updated_at))))
+                     (insert "[[" .author.web_url "][" .author.username "]]"
+                             ", on " "[" created-at "]"
+                             (if (not (equal created-at updated-at))
+                                 (concat ", " "edited on [" updated-at "]")
+                               "")
+                             "\n"))
+                   (insert "#+begin_src markdown :id " (number-to-string .id) "\n" .body "\n" "#+end_src" "\n\n")))
+               (alist-get 'notes thread))))))
+      (org-mode)
+      (org-fold-hide-drawer-all)
+      (org-fold-hide-sublevels 1)
+      (goto-char (point-min))
+      (switch-to-buffer (current-buffer)))))
 
 ;;;; TODOs:
 
