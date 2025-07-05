@@ -563,6 +563,28 @@ select a project first."
                    (string-trim-left (symbol-name prop) ":")))
    str))
 
+
+;;;;; help at point mode
+
+(defvar lab--help-at-point-timer nil)
+
+(defun lab--show-help ()
+  (display-local-help t))
+
+(defun lab--help-at-point ()
+  (unless lab--help-at-point-timer
+    (setq
+     lab--help-at-point-timer
+     (run-with-idle-timer
+      0 t #'lab--show-help))))
+
+(defun lab--help-at-point-cancel ()
+  (when lab--help-at-point-timer
+    (cancel-timer lab--help-at-point-timer)
+    (setq
+     lab--help-at-point-timer
+     nil)))
+
 ;;;; Consult integration
 
 (declare-function consult--read "consult")
@@ -1668,11 +1690,28 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
 (defvar-local lab--merge-request-last-version nil)
 (defvar-local lab--merge-request nil)
 (defvar-local lab--merge-request-diffs nil)
-
-
 (defvar lab-merge-request-history nil)
 
-(defun lab-merge-request-show (url)
+(define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
+  "Mode for viewing and reviewing GitLab merge request."
+  (lab--help-at-point)
+  (setq-local
+   header-line-format
+   (substitute-command-keys
+    "\\[lab-add-comment] → Add comment")))
+
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c r") #'lab-remove-comment)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c R") #'lab-remove-all-comments)
+
+(defun lab-merge-request-diff (url)
+  "Open a diff buffer for given merge request URL.
+In this buffer you can use the following functions:
+- `lab-add-comment' to add a comment for current (or selected) line(s).
+- `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
+- `lab-remove-comment' to remove a comment you added with `lab-add-comment'
+- `lab-remove-all-comments' to remove all comments."
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (diffs
@@ -1686,9 +1725,9 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
           (let-alist mr
             (lab--request
              (format "projects/%s/merge_requests/%s/versions" .project_id .iid)))))
-    (let ((inhibit-read-only t))
-      ;; TODO: Use different buffer per MR.
-      (with-current-buffer (get-buffer-create "*lab-diffs*")
+    (let ((inhibit-read-only t)
+          (buffer-name (let-alist mr (format "*lab-diff: %s#%s*" (url-unhex-string .project_id) .iid))))
+      (with-current-buffer (get-buffer-create buffer-name)
         (lab-remove-all-comments)
         (erase-buffer)
         (dolist (diff diffs)
@@ -1697,8 +1736,8 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
             (insert hunk)))
         (goto-char 0)
         (read-only-mode)
-        (diff-mode)
-        (switch-to-buffer "*lab-diffs*")
+        (lab-merge-request-diff-mode)
+        (switch-to-buffer buffer-name)
         (setq-local lab--merge-request-last-version (car versions))
         (setq-local lab--merge-request mr)
         (setq-local lab--merge-request-diffs diffs)))))
@@ -1748,7 +1787,13 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                (overlay-put ov 'lab-comment-input input)
                (overlay-put ov 'lab-comment-beginning beg)
                (overlay-put ov 'lab-comment-end end)
-               (overlay-put ov 'after-string str)))
+               (overlay-put ov 'after-string str)
+               (overlay-put
+                ov 'help-echo
+                (lambda (_window _obj pos)
+                  (when (< pos (1- end))
+                    (substitute-command-keys
+	             "\\[lab-edit-comment] → Edit, \\[lab-remove-comment] → Remove"))))))
            (when on-accept
              (funcall on-accept ov))))))))
 
@@ -1786,7 +1831,6 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
                      :%headers '(("Content-Type" . "application/json"))
                      :%data (json-encode (im-tap data)))
                 (overlay-put ov 'lab-comment-sent t)))))))))
-
 
 (defun lab-edit-comment (ov)
   (interactive (list (lab--comment-overlay-at-point)))
