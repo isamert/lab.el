@@ -563,28 +563,6 @@ select a project first."
                    (string-trim-left (symbol-name prop) ":")))
    str))
 
-
-;;;;; help at point mode
-
-(defvar lab--help-at-point-timer nil)
-
-(defun lab--show-help ()
-  (display-local-help t))
-
-(defun lab--help-at-point ()
-  (unless lab--help-at-point-timer
-    (setq
-     lab--help-at-point-timer
-     (run-with-idle-timer
-      0 t #'lab--show-help))))
-
-(defun lab--help-at-point-cancel ()
-  (when lab--help-at-point-timer
-    (cancel-timer lab--help-at-point-timer)
-    (setq
-     lab--help-at-point-timer
-     nil)))
-
 ;;;; Consult integration
 
 (declare-function consult--read "consult")
@@ -1644,9 +1622,9 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
       (iid . ,(car (string-split iid "[/#]"))))))
 
 (defun lab--pretty-mr-name (mr)
-  "Return a name like project-name#mr-id for MR.
+  "Return a name like project-name!mr-id for MR.
 MR is an object created by `lab--parse-merge-request-url'."
-  (let-alist mr (format "%s#%s" (url-unhex-string .project_id) .iid)))
+  (let-alist mr (format "%s!%s" (url-unhex-string .project_id) .iid)))
 
 ;;;; Code review stuff
 
@@ -1703,7 +1681,6 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
   "Mode for viewing and reviewing GitLab merge request."
-  (lab--help-at-point)
   (setq-local
    header-line-format
    (substitute-command-keys
@@ -1890,9 +1867,11 @@ In this buffer you can use the following functions:
 
 (defun lab--convert-md-to-org (body)
   "Basic conversion from Markdown to Org syntax.
-  This only does what's required for the merge request thread messages."
+This only does what's required for the merge request thread messages."
   (thread-last
     (s-replace-regexp "<[^>]+>" "" body)
+    (s-replace-regexp "`\\([^`\n]+\\)`" "~\\1~")
+    (s-replace-regexp "\\*\\*\\([^\\*\n]+\\)\\*\\*" "/\\1/")
     (replace-regexp-in-string
      "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
      (format "[[%s/\\2][\\1]]" lab-host))))
@@ -1910,6 +1889,9 @@ author information and timestamps."
     (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
       (erase-buffer)
       (let* ((diffs (make-hash-table))
+             (mr-info (let-alist mr
+                        (lab--request
+                         (format "projects/%s/merge_requests/%s" .project_id .iid))))
              (mr-versions (let-alist mr
                             (lab--request
                              (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
@@ -1933,17 +1915,34 @@ author information and timestamps."
                                       (lab--request
                                        (format "projects/%s/merge_requests/%s/versions/%s" .project_id .iid diff-version)))))
                                  diff-versions)))
-        ;; TODO: Add MR summary, real MR title etc.
-        (insert (format "#+TITLE: GitLab: %s\n\n" (lab--pretty-mr-name mr)))
-        (insert (format "[[%s][Open at web]]\n" url))
-        (insert (format "[[elisp:(lab-merge-request-diff \"%s\")][Diff & review]]\n\n" url))
+        (let-alist mr-info
+          (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
+          (insert (format "[[%s][Open at web]] | " url))
+          (insert (format "[[elisp:(lab-merge-request-diff \"%s\")][Diff & review]] | " url))
+          (insert (format "[[elisp:(lab-merge-request-overview \"%s\")][Refresh]] | " url))
+          (insert-button
+           "Inspect"
+           'action
+           (lambda (_button) (lab--inspect-obj mr-info))
+           'face custom-button
+           'follow-link t)
+          (insert "\n\n")
+          (insert (format "%s → %s, by %s\n" .source_branch .target_branch (lab--format-author .author)))
+          (insert (s-trim (lab--format-pipeline .head_pipeline)))
+          (insert "\n\n")
+          (insert "-----\n")
+          (insert (lab--convert-md-to-org .description) "\n\n"))
         (dolist (thread mr-threads)
           (let* ((invidual? (alist-get 'individual_note thread))
                  (first-note (car (alist-get 'notes thread))))
-            (when invidual?
-              (let-alist first-note
-                (insert "* " "[[" .author.web_url "][" .author.username "]]" " " (lab--convert-md-to-org .body) "\n\n")))
-            (unless invidual?
+            (if invidual?
+                (let-alist first-note
+                  (insert "* " (lab--format-author .author) ":"
+                          (if (length> .body 80)
+                              " commented\n"
+                            " ")
+                          (lab--convert-md-to-org .body)
+                          "\n"))
               (insert "*"
                       (pcase (list (alist-get 'resolvable first-note)
                                    (alist-get 'resolved first-note))
@@ -1984,6 +1983,10 @@ author information and timestamps."
       (org-fold-hide-sublevels 1)
       (goto-char (point-min))
       (switch-to-buffer (current-buffer)))))
+
+(defun lab--format-author (author)
+  (let-alist author
+    (concat "[[" .web_url "][" .username "]]" )))
 
 ;;;; TODOs:
 
