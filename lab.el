@@ -1644,7 +1644,7 @@ MR is an object created by `lab--parse-merge-request-url'."
   (goto-char (overlay-get ov 'lab-comment-end))
   (exchange-point-and-mark))
 
-(defun lab--find-line-number-at (pos &optional old?)
+(defun lab--diff-find-line-number-at (pos &optional old?)
   (save-match-data
     (save-excursion
       (goto-char pos)
@@ -1665,6 +1665,44 @@ MR is an object created by `lab--parse-merge-request-url'."
           (seq-filter
            (lambda (l) (not (s-prefix? (if old? "+" "-") l)))
            (seq-drop lines 1))))))))
+
+(defun lab--diff-goto-line (target-line-type target-line-number)
+  "Goto TARGET-LINE-NUMBER of TARGET-LINE-TYPE (\\='old or \\='new) in the diff.
+This function assumes you are currently on a hunk header."
+  (let ((found nil))
+    (while (not found)
+      (pcase-let* ((boundary (or (ignore-errors
+                                   (save-excursion
+                                     (diff-file-next)
+                                     (point)))
+                                 (point-max)))
+                   (`(_ ,start-line ,length)
+                    (s-match
+                     (format "%s\\([0-9]+\\),\\([0-9]+\\)" (if (eq target-line-type 'old) "^@@ -" " \\+"))
+                     (thing-at-point 'line t))))
+        (setq start-line (string-to-number start-line))
+        (setq length (string-to-number length))
+        (if (< target-line-number (+ start-line length))
+            (progn
+              (setq found t)
+              (let ((current-line (1- start-line)))
+                (while (not (= current-line target-line-number))
+                  (forward-line)
+                  (let ((line-type (pcase (save-excursion (beginning-of-line) (char-after))
+                                     (?\s 'same)
+                                     (?+ 'new)
+                                     (?- 'old)
+                                     (otherwise (error "Malformed diff line")))))
+                    (setq current-line
+                          (cond
+                           ((or (eq line-type 'same)
+                                (eq line-type target-line-type))
+                            (1+ current-line))
+                           (t current-line)))))))
+          (let ((next-hunk-pos (save-excursion (diff-hunk-next) (point))))
+            (if (< next-hunk-pos boundary)
+                (goto-char next-hunk-pos)
+              (error "Line not found in this file"))))))))
 
 (defun lab--format-hunk (hunk)
   (let-alist hunk
@@ -1700,6 +1738,10 @@ In this buffer you can use the following functions:
 - `lab-remove-all-comments' to remove all comments."
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
+         (threads (let-alist mr
+                    (lab--request
+                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                     :%collect-all? t)))
          (diffs
           ;; GET /projects/:id/merge_requests/:merge_request_iid/raw_diffs
           ;; ^ This retrieves the raw diff directly but it's added on GitLab v17.9
@@ -1720,6 +1762,41 @@ In this buffer you can use the following functions:
           (let ((hunk (lab--format-hunk diff)))
             (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
             (insert hunk)))
+
+        ;; TODO: s/mr-threads-example/threads
+        (dolist (thread threads)
+          ;; TODO: Do not loop all notes, do it only for first note and append
+          ;; others to beneath it
+          (cl-loop for note in (alist-get 'notes thread)
+                   as first-note = (car (alist-get 'notes thread))
+                   when (equal (alist-get 'type first-note) "DiffNote")
+                   do (let-alist note
+                        (goto-char (point-min))
+                        ;; TODO: Move this to utility (lab--diff-goto-line → it should also take the file name as paramater)
+                        (when (re-search-forward (rx-to-string
+                                                  `(and "diff --git "
+                                                        "a/" ,.position.old_path
+                                                        " "
+                                                        "b/" ,.position.new_path)))
+                          (diff-hunk-next)
+                          ;; TODO: this function needs to find in which hunk
+                          ;; this line exists first
+                          (lab--diff-goto-line (intern .position.line_range.end.type)
+                                               (alist-get (intern (concat .position.line_range.end.type "_line"))
+                                                          .position.line_range.end))
+                          ;; TODO: Add overlays
+                          (let ((ov (make-overlay (point) (1+ (point-at-eol)))))
+                            (save-excursion
+                              (goto-char (overlay-start ov))
+                              (let* ((offset
+                                      (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
+                                     (str
+                                      (quick-peek--prepare-overlay-string .body offset)))
+                                (overlay-put ov 'lab-thread t)
+                                ;; (overlay-put ov 'lab-comment-input input)
+                                ;; (overlay-put ov 'lab-comment-beginning beg)
+                                ;; (overlay-put ov 'lab-comment-end end)
+                                (overlay-put ov 'after-string str))))))))
         (goto-char 0)
         (read-only-mode)
         (lab-merge-request-diff-mode)
@@ -1807,9 +1884,9 @@ In this buffer you can use the following functions:
                                    (new_path . ,(alist-get 'new_path diff))
                                    ;; (line_range . "TODO")
                                    ,@(when (or (s-prefix? "+" line) unchanged-line?)
-                                       `((new_line . ,(lab--find-line-number-at pt))))
+                                       `((new_line . ,(lab--diff-find-line-number-at pt))))
                                    ,@(when (or (s-prefix? "-" line) unchanged-line?)
-                                       `((old_line . ,(lab--find-line-number-at pt :old))))))))))
+                                       `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
             (let-alist lab--merge-request
               (when (lab--request
                      (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
