@@ -973,7 +973,9 @@ Examples:
                 (lambda (&key data &allow-other-keys)
                   (error ">> lab--request failed with %s" data)))
         :sync (not %async)
-        :data (lab--plist-to-alist %data)
+        :data (if (plistp %data)
+                  (lab--plist-to-alist %data)
+                %data)
         :params `(,@(when %collect-all?
                       `(("per_page" . ,lab--max-per-page-result-count)
                         ("order_by" . "id")
