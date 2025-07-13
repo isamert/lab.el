@@ -1,3 +1,22 @@
+* v2.3.0
+- =lab-trigger-pipeline-manually=: New interactive function to manually trigger pipelines.
+  - Also see `lab-trigger-pipeline` to use it pragmatically.
+  - This function remembers your variable inputs per project. (see the ~history-key~ feature below)
+- Properly parse pipeline URL using =lab-host= variable (thanks to @joranvar).
+- =lab--user-input=: Add =history-key= to support persisting inputs; enables saving prompt history between sessions.
+  Use this to enable persisting history between sessions:
+  #+begin_src elisp
+  (with-eval-after-load 'savehist
+    (add-to-list 'savehist-additional-variables 'lab--user-input-history))
+  #+end_src
+
+** Internal changes
+- =lab--request=: Add =%params= option for passing bulk parameters.
+- =lab--user-input=: Defaults set for =on-start= and =on-reject= handlers.
+- =lab--user-input=: =on-accept= function now runs in the source buffer.
+- =lab--request=: Now converts to alist only if =%data= is a plist.
+- =lab--request=: If endpoint is a full URL, it is used directly.
+
 * v2.2.2
 
 - Add ~lab-search-project~.
