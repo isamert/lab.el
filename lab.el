@@ -899,7 +899,7 @@ this check makes sense without any significant loss of functionality."
 (cl-defun lab--request
     (endpoint
      &rest params
-     &key (%type "GET") (%headers '()) (%data nil) (%collect-all? nil) (%raw? nil) %async %success
+     &key (%type "GET") (%headers '()) (%params nil) (%data nil) (%collect-all? nil) (%raw? nil) %async %success
      &allow-other-keys)
   "Do a GitLab request.
 
@@ -975,7 +975,8 @@ Examples:
                       `(("id_after" . ,lastid)))
                   ,@(unless %collect-all?
                       `(("per_page" . ,lab-result-count)))
-                  ,@(lab--plist-to-alist params)))
+                  ,@(lab--plist-to-alist params)
+                  ,@%params))
       (setq lastid
             (when (and %collect-all? (lab--length= json lab--max-per-page-result-count))
               (alist-get 'id (lab-last-item json)))))
