@@ -217,6 +217,14 @@ haven't installed consult."
 
 (defvar lab--interrupt nil)
 
+(defconst lab--trigger-pipeline-user-input-helper-text
+  "# Specify variable values to be used in this run.
+# Each line should contain a variable assignment like:
+#   SOME_VAR=true
+#
+# Comments lines like this are skipped.
+")
+
 ;;;; Public variables & utilities
 
 ;;;###autoload
@@ -1001,6 +1009,8 @@ Examples:
        (lab-list-project-merge-requests .id))
    (?p "List pipelines"
        (lab-list-project-pipelines .id))
+   (?t "Trigger pipeline"
+       (lab-trigger-pipeline-manually .id .default_branch))
    (?i "Inspect"
        (lab--inspect-obj it))))
 
@@ -1222,6 +1232,53 @@ recurring call, instead of a new watch request."
                             (alist-get 'iid mr)))))
        (lab-watch-pipeline (alist-get 'web_url pipeline))))))
 
+(defun lab-trigger-pipeline-manually (&optional project-id default-branch)
+  "Trigger a pipeline.
+This prompts for the branch or tag to start the pipeline and lets you
+enter additional environment variables interactively."
+  (interactive)
+  ;; TODO: Maybe list branches/tags & let the user select instead.
+  (let ((ref (read-string
+              "Branch or tag name: "
+              (or default-branch (lab--find-main-branch)))))
+    (lab--user-input :mode #'sh-mode
+                     :init lab--trigger-pipeline-user-input-helper-text
+                     :parser
+                     (lambda ()
+                       (thread-last
+                         (string-split (buffer-substring-no-properties (point-min) (point-max)) "\n")
+                         (seq-map #'string-trim)
+                         (seq-filter (lambda (it) (not (string-prefix-p "#" it))))
+                         (seq-map (lambda (it)
+                                    (pcase-let ((`(,key ,val) (s-split-up-to "=" it 2)))
+                                      (when (and key val)
+                                        (cons key val)))))
+                         (seq-filter #'identity)))
+                     :on-accept
+                     (lambda (_ variables)
+                       (lab-trigger-pipeline :project-id project-id :ref ref :variables variables)))))
+
+(cl-defun lab-trigger-pipeline (&key project-id ref variables)
+  "Trigger a new pipeline for PROJECT-ID using the branch/tag name REF.
+
+  Same thing as `lab-trigger-pipeline-manually' but for programmatic use
+  only.
+
+  If PROJECT-ID is nil, then use current project.
+
+  VARIABLES is an alist, like:
+
+  \\='((\"SOME_VAR\" . \"true\"))"
+  (lab--request (format "projects/%s/pipeline" (or project-id "#{project}"))
+                :ref ref
+                :%type "POST"
+                :%data (json-encode `((variables
+                                       .
+                                       ,(seq-map (pcase-lambda (`(,key . ,val))
+                                                   `((key . ,key)
+                                                     (value . ,(format "%s" val))))
+                                                 variables))))))
+
 ;;;; lab-trace-mode:
 
 ;; TODO Add retry action for `lab-trace-mode-current-job' and start watching it
@@ -1297,7 +1354,7 @@ recurring call, instead of a new watch request."
 ;;;###autoload
 (defun lab-act-on-last-failed-pipeline-job (&optional project-id)
   "List and act on last failed pipelines jobs for PROJECT.
-If PROJECT-ID is omitted, currently open project is used."
+  If PROJECT-ID is omitted, currently open project is used."
   (interactive (list (lab--read-project-id-interactive-helper)))
   (let* ((failed?
           (lambda (it)
