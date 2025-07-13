@@ -363,7 +363,8 @@ input.  When the user accepts the input, the on-accept function
 is called with the input and parser result if given, and the
 buffer is killed.  When the user rejects the input, the on-reject
 function is called if given and the buffer is simply killed."
-  (let* ((buffer (get-buffer-create buffer-name))
+  (let* ((source-buffer (current-buffer))
+         (buffer (get-buffer-create buffer-name))
          (success-handler (lambda ()
                             (interactive)
                             (let ((parser-result (when parser
@@ -371,9 +372,10 @@ function is called if given and the buffer is simply killed."
                                                      (funcall parser))))
                                   (result (substring-no-properties (buffer-string))))
                               (kill-buffer buffer)
-                              (if parser
-                                  (funcall on-accept result parser-result)
-                                (funcall on-accept result)))))
+                              (with-current-buffer source-buffer
+                                (if parser
+                                    (funcall on-accept result parser-result)
+                                  (funcall on-accept result))))))
          (reject-handler (lambda ()
                            (interactive)
                            (kill-buffer buffer)
