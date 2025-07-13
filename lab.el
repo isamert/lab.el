@@ -225,6 +225,9 @@ haven't installed consult."
 # Comments lines like this are skipped.
 ")
 
+(defvar lab--user-input-history (make-hash-table :test #'equal)
+  "History for user inputs.")
+
 ;;;; Public variables & utilities
 
 ;;;###autoload
@@ -355,6 +358,7 @@ candidate, if given.  PROMPT passed to `completing-read' as is."
      (on-start #'ignore)
      on-accept
      (on-reject  #'ignore)
+     history-key
      parser)
   "Prompt the user for input in a new buffer with customizable options.
 Keyword arguments:
@@ -365,6 +369,8 @@ Keyword arguments:
 - ON-ACCEPT - function to run when the user accepts the input.
 - ON-REJECT - no-arg function to run when the user rejects the input
 - PARSER - an function to parse user input before passing to on-accept function
+- HISTORY-KEY - key used to store and retrieve input history in the variable
+  `lab--user-input-history'
 
 The prompt provides instructions for the user to accept or reject
 input.  When the user accepts the input, the on-accept function
@@ -380,6 +386,7 @@ function is called if given and the buffer is simply killed."
                                                      (funcall parser))))
                                   (result (substring-no-properties (buffer-string))))
                               (kill-buffer buffer)
+                              (puthash history-key result lab--user-input-history)
                               (with-current-buffer source-buffer
                                 (if parser
                                     (funcall on-accept result parser-result)
@@ -395,7 +402,7 @@ function is called if given and the buffer is simply killed."
       (local-set-key (kbd "C-c C-c") success-handler)
       (local-set-key (kbd "C-c C-k") reject-handler)
       (setq header-line-format "Hit `C-c C-c' to save `C-c C-k' to reject.")
-      (insert init)
+      (insert (gethash history-key lab--user-input-history init))
       (funcall on-start)
       (switch-to-buffer-other-window buffer))))
 
@@ -1245,6 +1252,7 @@ enter additional environment variables interactively."
               (or default-branch (lab--find-main-branch)))))
     (lab--user-input :mode #'sh-mode
                      :init lab--trigger-pipeline-user-input-helper-text
+                     :history-key (format "pipeline-variables-for-%s" (or project-id (lab--project-path)))
                      :parser
                      (lambda ()
                        (thread-last
