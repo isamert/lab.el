@@ -352,9 +352,9 @@ candidate, if given.  PROMPT passed to `completing-read' as is."
      (mode #'fundemental-mode)
      (init "")
      (buffer-name "*lab-input*")
-     on-start
+     (on-start #'ignore)
      on-accept
-     on-reject
+     (on-reject  #'ignore)
      parser)
   "Prompt the user for input in a new buffer with customizable options.
 Keyword arguments:
