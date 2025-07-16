@@ -967,7 +967,10 @@ Examples:
                     #'buffer-string
                   (apply-partially
                    #'json-parse-buffer
-                   :object-type 'alist :array-type 'list))
+                   :object-type 'alist
+                   :array-type 'list
+                   :null-object nil
+                   :false-object nil))
         :success (cl-function
                   (lambda (&key data &allow-other-keys)
                     (unless %async
