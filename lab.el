@@ -1666,10 +1666,22 @@ MR is an object created by `lab--parse-merge-request-url'."
            (lambda (l) (not (s-prefix? (if old? "+" "-") l)))
            (seq-drop lines 1))))))))
 
-(defun lab--diff-goto-line (target-line-type target-line-number)
+(defun lab--diff-goto-line (old-path new-path target-line-type target-line-number)
   "Goto TARGET-LINE-NUMBER of TARGET-LINE-TYPE (\\='old or \\='new) in the diff.
 This function assumes you are currently on a hunk header."
-  (let ((found nil))
+  (let ((file-pos (save-excursion
+                    (goto-char (point-min))
+                    (when (re-search-forward (rx-to-string
+                                              `(and "diff --git "
+                                                    "a/" ,old-path
+                                                    " "
+                                                    "b/" ,new-path)))
+                      (point))))
+        (found nil))
+    (unless file-pos
+      (error "Path not found in diff: old_path:%s, new_path:%s" old-path new-path))
+    (goto-char file-pos)
+    (diff-hunk-next)
     (while (not found)
       (pcase-let* ((boundary (or (ignore-errors
                                    (save-excursion
@@ -1762,8 +1774,6 @@ In this buffer you can use the following functions:
           (let ((hunk (lab--format-hunk diff)))
             (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
             (insert hunk)))
-
-        ;; TODO: s/mr-threads-example/threads
         (dolist (thread threads)
           ;; TODO: Do not loop all notes, do it only for first note and append
           ;; others to beneath it
@@ -1771,32 +1781,29 @@ In this buffer you can use the following functions:
                    as first-note = (car (alist-get 'notes thread))
                    when (equal (alist-get 'type first-note) "DiffNote")
                    do (let-alist note
-                        (goto-char (point-min))
-                        ;; TODO: Move this to utility (lab--diff-goto-line → it should also take the file name as paramater)
-                        (when (re-search-forward (rx-to-string
-                                                  `(and "diff --git "
-                                                        "a/" ,.position.old_path
-                                                        " "
-                                                        "b/" ,.position.new_path)))
-                          (diff-hunk-next)
-                          ;; TODO: this function needs to find in which hunk
-                          ;; this line exists first
-                          (lab--diff-goto-line (intern .position.line_range.end.type)
-                                               (alist-get (intern (concat .position.line_range.end.type "_line"))
-                                                          .position.line_range.end))
-                          ;; TODO: Add overlays
-                          (let ((ov (make-overlay (point) (1+ (point-at-eol)))))
-                            (save-excursion
-                              (goto-char (overlay-start ov))
-                              (let* ((offset
-                                      (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
-                                     (str
-                                      (quick-peek--prepare-overlay-string .body offset)))
-                                (overlay-put ov 'lab-thread t)
-                                ;; (overlay-put ov 'lab-comment-input input)
-                                ;; (overlay-put ov 'lab-comment-beginning beg)
-                                ;; (overlay-put ov 'lab-comment-end end)
-                                (overlay-put ov 'after-string str))))))))
+                        ;; TODO: Check if this diff belongs to the
+                        ;; current revision or older one first. Older
+                        ;; ones may cause errors (line boundary issues
+                        ;; etc.)
+                        (lab--diff-goto-line
+                         .position.old_path
+                         .position.new_path
+                         (intern .position.line_range.end.type)
+                         (alist-get (intern (concat .position.line_range.end.type "_line"))
+                                    .position.line_range.end))
+                        ;; TODO: Add overlays
+                        (let ((ov (make-overlay (point) (1+ (point-at-eol)))))
+                          (save-excursion
+                            (goto-char (overlay-start ov))
+                            (let* ((offset
+                                    (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
+                                   (str
+                                    (quick-peek--prepare-overlay-string .body offset)))
+                              (overlay-put ov 'lab-thread t)
+                              ;; (overlay-put ov 'lab-comment-input input)
+                              ;; (overlay-put ov 'lab-comment-beginning beg)
+                              ;; (overlay-put ov 'lab-comment-end end)
+                              (overlay-put ov 'after-string str)))))))
         (goto-char 0)
         (read-only-mode)
         (lab-merge-request-diff-mode)
