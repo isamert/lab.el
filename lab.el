@@ -1053,13 +1053,15 @@ Example:
    (?i "Inspect"
        (lab--inspect-obj it))))
 
-(defmemoize lab-get-all-group-projects (&optional group)
+(cl-defun lab-get-all-group-projects (&optional group &key on-success on-error)
   "Get all groups belonging to given group."
   (lab--request
    (format "groups/%s/projects" (or (when group (url-hexify-string group)) "#{group}"))
    :with_shared 'false
    :include_subgroups 'true
-   :%collect-all? t))
+   :%collect-all? t
+   :%success on-success
+   :%error on-error))
 
 ;;;###autoload
 (defun lab-list-all-group-projects (&optional group)
