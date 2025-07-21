@@ -1,9 +1,9 @@
 ;;; lab.el --- An interface for GitLab -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023 Isa Mert Gurbuz
+;; Copyright (C) 2023-2025 Isa Mert Gurbuz
 
 ;; Author: Isa Mert Gurbuz <isamertgurbuz@gmail.com>
-;; Version: 2.3.0
+;; Version: 2.4.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "27.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
@@ -27,7 +27,7 @@
 ;; GitLab (managed or self-hosted).
 ;;
 ;; Provides you easier access to some GitLab functionality regarding to:
-;; - Projects :: list, open, clone, list MRs...
+;; - Projects :: search, list, open, clone, list MRs...
 ;; - Merge Requests :: list, open, create, rebase, list pipelines...
 ;; - Pipelines :: list, open, retry, cancel, delete, watch status...
 ;; - Jobs :: list, open, retry, cancel, delete, show logs/traces...

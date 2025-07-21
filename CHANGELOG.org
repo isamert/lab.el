@@ -1,4 +1,13 @@
+* v2.4.0
+
+- Make functions that takes a while to run non-blocking:  =lab-clone-bulk=, =lab-get-all-group-projects=, =lab-get-all-owned-projects= does not block while fetching project list.
+
+** Internal changes
+
+- =lab--request=: Make =%collect-all= work with async calls.
+
 * v2.3.0
+
 - =lab-trigger-pipeline-manually=: New interactive function to manually trigger pipelines.
   - Also see `lab-trigger-pipeline` to use it pragmatically.
   - This function remembers your variable inputs per project. (see the ~history-key~ feature below)
