@@ -763,9 +763,30 @@ Also see `lab-after-git-clone-functions'."
                (funcall callback nil))
            (message "Cloning %s is failed." url)))))))
 
-;; TODO: Pull existing repositories with: (lab-pull-bulk existing root)?
 ;;;###autoload
-(defun lab-clone-bulk (root repositories)
+(async-defun lab-clone-bulk (gitlab-group root)
+  "Clone all repositories of GITLAB-GROUP into ROOT."
+  (interactive (list
+      (read-string "Enter GitLab group path to clone all projects from: " lab-group)
+      (read-directory-name "Path to clone projects in: " lab-projects-directory)))
+  (let* ((projects (prog2 (message "Please wait, getting project list...")
+                       (await (promise-new
+                               (lambda (resolve reject)
+                                 (lab-get-all-group-projects
+                                  gitlab-group
+                                  :on-success (lambda (data) (funcall resolve data))
+                                  :on-error (lambda (data) (funcall reject data))))))
+                     (message "Please wait, getting project list...Done")))
+         (groupped (seq-group-by
+                    (lambda (it)
+                      (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
+                    projects))
+         ;; (existing (alist-get t groupped))
+         (new (alist-get nil groupped)))
+    (message "Found %s projects in total, %s are new." (length projects) (length new))
+    (lab--clone-bulk-helper root new)))
+
+(defun lab--clone-bulk-helper (root repositories)
   "Clone all REPOSITORIES to ROOT directory.
 REPOSITORIES is a list containing repository alists in the form of
 
@@ -785,17 +806,6 @@ in (also see `lab-projects-directory') and also asks for a GitLab
 group path to fetch all projects of (also see `lab-group').
 
 You can interrupt the process by calling \\[lab-interrupt]."
-  (interactive
-   (let* ((root (read-directory-name "Path to clone projects in: " lab-projects-directory))
-          (gitlab-group (read-string "Enter GitLab group path to clone all projects from: " lab-group))
-          (groupped (prog2 (message "Please wait, getting project list...")
-                        (seq-group-by
-                         (lambda (it) (file-exists-p (lab--path-join root (alist-get 'path_with_namespace it))))
-                         (lab-get-all-group-projects gitlab-group))
-                      (message "Please wait, getting project list...Done")))
-          ;; (existing (alist-get t groupped))
-          (new (alist-get nil groupped)))
-     (list root new)))
   (if-let ((current (car repositories)))
       (let* ((path (lab--path-join root (alist-get 'path_with_namespace current)))
              (project-parent (f-dirname path)))
@@ -805,7 +815,7 @@ You can interrupt the process by calling \\[lab-interrupt]."
         (if (file-exists-p path)
             (progn
               (message "lab :: Skipping %s as it already exists." path)
-              (lab-clone-bulk root (seq-drop repositories 1)))
+              (lab--clone-bulk-helper root (seq-drop repositories 1)))
           (mkdir project-parent t)
           (message "lab :: Cloning %s..." path)
           (lab-git-clone
@@ -814,7 +824,7 @@ You can interrupt the process by calling \\[lab-interrupt]."
            :callback
            (lambda (success?)
              (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
-             (lab-clone-bulk root (seq-drop repositories 1))))))
+             (lab--clone-bulk-helper root (seq-drop repositories 1))))))
     (message "lab :: Cloned all repositories. Check buffer %s for details." lab--git-clone-buffer-name)))
 
 (async-defun lab-pull-bulk (&optional repositories interactive?)
@@ -1054,7 +1064,9 @@ Example:
        (lab--inspect-obj it))))
 
 (cl-defun lab-get-all-group-projects (&optional group &key on-success on-error)
-  "Get all groups belonging to given group."
+  "Return all groups belonging to GROUP.
+If ON-SUCCESS is non-nil, call it asynchronously with the result;
+ON-ERROR, if provided, handles errors."
   (lab--request
    (format "groups/%s/projects" (or (when group (url-hexify-string group)) "#{group}"))
    :with_shared 'false
