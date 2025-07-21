@@ -6,7 +6,7 @@
 ;; Version: 2.3.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
-;; Package-Requires: ((emacs "27.1") (memoize "1.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
+;; Package-Requires: ((emacs "27.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -44,7 +44,6 @@
 (require 'f)
 (require 'vc-git)
 (require 'request)
-(require 'memoize)
 (require 'ansi-color)
 (require 'async-await)
 (require 'promise)
@@ -1078,27 +1077,36 @@ ON-ERROR, if provided, handles errors."
 ;;;###autoload
 (defun lab-list-all-group-projects (&optional group)
   "List all GROUP projects and act on them.
-See `lab-group'.  BE CAREFUL, this function tries to fetch all
-functions belonging to given group.  Result is memoized after
-first call for `memoize-default-timeout'."
+See `lab-group'.  May be slow if there are many projects."
   (interactive)
-  (lab-project-select-and-act-on (lab-get-all-group-projects group)))
+  (lab-get-all-group-projects
+   group
+   :on-success
+   (lambda (data)
+     (message ">> Fetching projects, this may take a while...")
+     (lab-project-select-and-act-on data))))
 
-(defmemoize lab-get-all-owned-projects ()
-  "Get all projects owned by you."
+(cl-defun lab-get-all-owned-projects (&key on-success on-error)
+  "Get all projects owned by you.
+If ON-SUCCESS is non-nil, call it asynchronously with the result;
+ON-ERROR, if provided, handles errors."
   (lab--request
    "projects"
    :owned 'true
-   :%collect-all? t))
+   :%collect-all? t
+   :%success on-success
+   :%error on-error))
 
 ;;;###autoload
 (defun lab-list-all-owned-projects ()
-  "Get all projects owned by you.
-BE CAREFUL, this function tries to fetch all functions belonging
-to given group.  Result is memoized after first call for
-`memoize-default-timeout'."
+  "Get all projects owned by the you and act on them.
+May be slow if there are many projects."
   (interactive)
-  (lab-project-select-and-act-on (lab-get-all-owned-projects)))
+  (lab-get-all-owned-projects
+   :on-success
+   (lambda (data)
+     (message ">> Fetching projects, this may take a while...")
+     (lab-project-select-and-act-on data))))
 
 ;;;###autoload
 (defun lab-list-project-merge-requests (&optional project)
