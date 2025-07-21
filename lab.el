@@ -914,93 +914,120 @@ this check makes sense without any significant loss of functionality."
 (cl-defun lab--request
     (endpoint
      &rest params
-     &key (%type "GET") (%headers '()) (%params nil) (%data nil) (%collect-all? nil) (%raw? nil) %async %success
+     &key (%type "GET") %headers %params %data %collect-all? %raw? %success %error
      &allow-other-keys)
-  "Do a GitLab request.
+  "Make a sync or async GitLab API request to ENDPOINT with PARAMS.
 
-%TYPE, %HEADERS, %DATA, %COLLECT-ALL and %RAW are special
-parameters, rest of the given PARAMS are added into ENDPOINT as
-url parameters.
+Accepted keyword params:
 
-When %COLLECT-ALL is non-nil, do a paged request and collect all
-results in a list and return them.
+- %TYPE        HTTP method (default \"GET\").
+- %HEADERS     Additional HTTP headers (alist).
+- %PARAMS      Additional URL query parameters (alist).
+- %DATA        Data/body payload (plist or alist).
+- %COLLECT-ALL If non-nil, auto-paginate and return all results as a list.
+- %RAW?        If non-nil, return raw API response (string), otherwise parse
+               as JSON/alist.
+- %SUCCESS     If non-nil, call as callback with parsed data on success (async).
+- %ERROR       If non-nil, call as callback with data on error.
 
-When %RAW is non-nil, return raw response from GitLab instead of
-interpreting it as JSON and casting it into an alist.
+Additional PARAMS are added to the endpoint as URL parameters.
 
-If ENDPOINT requires a project path, you can use `#{project}'
-special syntax to refer to the current project which is inherited
-from the buffer this function is called from.
+Special endpoint interpolation:
 
-Examples:
+  `#{project}` or `#{group}` will be replaced using buffer-local
+  project/group context.
 
-  ;; Get *all* pipelines currently running on master.
+- If %COLLECT-ALL is given, fetches all pages and collates results.
+- If %RAW? is given, skips JSON parsing and returns raw response.
+- If %SUCCESS is given, makes request asynchronous and calls %SUCCESS
+  with data.  %ERROR is the error callback.
+- Otherwise, returns parsed response (synchronously).
+
+Example:
   (lab--request
    \"projects/#{project}/pipelines\"
    :scope \"running\"
    :ref \"master\"
    :%collect-all t)"
-
-  ;; Remove meta items from params list so that we can use `params' as
-  ;; url parameters
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
-
-  (let (json
-        (all-items '())
-        (lastid t)
-        (token (lab--retrieve-token)))
-    (while lastid
-      (request
-        (thread-last
-          (if (s-prefix? "http" endpoint)
-              endpoint
-            (format "%s/api/v4/%s" lab-host endpoint))
-          (s-replace-regexp "#{group}" (lambda (&rest _)
-                                         (url-hexify-string lab-group)))
-          (s-replace-regexp "#{project}" (lambda (&rest _)
-                                           (or (ignore-errors
-                                                 (lab--project-path))
-                                               (user-error "You are not in a valid git project")))))
-        :type %type
-        :headers `((Authorization . ,(format "Bearer %s" token)) ,@%headers)
-        :parser (if %raw?
-                    #'buffer-string
-                  (apply-partially
-                   #'json-parse-buffer
-                   :object-type 'alist
-                   :array-type 'list
-                   :null-object nil
-                   :false-object nil))
-        :success (cl-function
-                  (lambda (&key data &allow-other-keys)
-                    (unless %async
-                      (setq json data)
-                      (when %collect-all?
-                        (setq all-items `(,@all-items ,@json))))
-                    (when %success
-                      (funcall %success data))))
-        :error (cl-function
-                (lambda (&key data &allow-other-keys)
-                  (error ">> lab--request failed with %s" data)))
-        :sync (not %async)
-        :data (if (plistp %data)
-                  (lab--plist-to-alist %data)
-                %data)
-        :params `(,@(when %collect-all?
-                      `(("per_page" . ,lab--max-per-page-result-count)
-                        ("order_by" . "id")
-                        ("sort" . "asc")
-                        ("pagination" . "keyset")))
-                  ,@(when (and %collect-all? (not (eq lastid t)))
-                      `(("id_after" . ,lastid)))
-                  ,@(unless %collect-all?
-                      `(("per_page" . ,lab-result-count)))
-                  ,@(lab--plist-to-alist params)
-                  ,@%params))
-      (setq lastid
-            (when (and %collect-all? (lab--length= json lab--max-per-page-result-count))
-              (alist-get 'id (lab-last-item json)))))
-    (if %collect-all? all-items json)))
+  (let* ((token (lab--retrieve-token))
+         (request-url
+          (thread-last
+            (if (s-prefix? "http" endpoint)
+                endpoint
+              (format "%s/api/v4/%s" lab-host endpoint))
+            (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string lab-group)))
+            (s-replace-regexp "#{project}" (lambda (&rest _)
+                                             (or (ignore-errors (lab--project-path))
+                                                 (user-error "You are not in a valid git project"))))))
+         (make-request
+          (lambda (lastid on-success)
+            (request
+              request-url
+              :type %type
+              :headers `((Authorization . ,(format "Bearer %s" token)) ,@%headers)
+              :parser (if %raw?
+                          #'buffer-string
+                        (apply-partially
+                         #'json-parse-buffer
+                         :object-type 'alist
+                         :array-type 'list
+                         :null-object nil
+                         :false-object nil))
+              :success (cl-function (lambda (&key data &allow-other-keys) (funcall on-success data)))
+              :error (cl-function
+                      (lambda (&key data &allow-other-keys)
+                        (if %error
+                            (funcall %error data)
+                          (error ">> lab--request failed with %s" data))))
+              :sync (not %success) ;; Only sync if no user callback
+              :data (if (plistp %data) (lab--plist-to-alist %data) %data)
+              :params
+              `(,@(when %collect-all?
+                    `(("per_page" . ,lab--max-per-page-result-count) ("order_by" . "id") ("sort" . "asc") ("pagination" . "keyset")))
+                ,@(when (and %collect-all? (not (eq lastid t)))
+                    `(("id_after" . ,lastid)))
+                ,@(unless %collect-all?
+                    `(("per_page" . ,lab-result-count)))
+                ,@(lab--plist-to-alist params) ,@%params)))))
+    (cond
+     ((and %success %collect-all?)
+      (let (acc)
+        (cl-labels
+            ((step (lastid)
+                   (funcall make-request lastid
+                            (lambda (data)
+                              (setq acc (append acc data))
+                              (let ((len (length data))
+                                    (newid (alist-get 'id (lab-last-item data))))
+                                (if (and (= len lab--max-per-page-result-count) newid)
+                                    (step newid)
+                                  (funcall %success acc)))))))
+          (step t))))
+     ((and (not %success) %collect-all?)
+      (let ((all-items '())
+            (lastid t)
+            (json nil))
+        (while lastid
+          (funcall make-request lastid
+                   (lambda (data)
+                     (setq json data)
+                     (setq all-items (append all-items json)))))
+        (while (and %collect-all? (lab--length= json lab--max-per-page-result-count))
+          (setq lastid (alist-get 'id (lab-last-item json)))
+          (funcall make-request lastid
+                   (lambda (data)
+                     (setq json data)
+                     (setq all-items (append all-items json)))))
+        all-items))
+     (t
+      (let ((json nil))
+        (funcall make-request t
+                 (lambda (data)
+                   (setq json data)
+                   (when %success
+                     (funcall %success data))))
+        json)))))
 
 (defun lab--open-web-url (url)
   (kill-new url)
@@ -1108,7 +1135,7 @@ If PROJECT is nil,current git project is used."
        (consult--read
         (lab--consult-async-generator
          (lambda (action on-result)
-           (lab--request "projects" :search action :%async t :%success on-result))
+           (lab--request "projects" :search action :%success on-result))
          (lambda (result)
            (mapcar
             (lambda (cand)
