@@ -1015,19 +1015,14 @@ Example:
           (step t))))
      ((and (not %success) %collect-all?)
       (let ((all-items '())
-            (lastid t)
-            (json nil))
+            (lastid t))
         (while lastid
-          (funcall make-request lastid
-                   (lambda (data)
-                     (setq json data)
-                     (setq all-items (append all-items json)))))
-        (while (and %collect-all? (lab--length= json lab--max-per-page-result-count))
-          (setq lastid (alist-get 'id (lab-last-item json)))
-          (funcall make-request lastid
-                   (lambda (data)
-                     (setq json data)
-                     (setq all-items (append all-items json)))))
+          (funcall
+           make-request lastid
+           (lambda (data)
+             (setq lastid (while (lab--length= data lab--max-per-page-result-count)
+                            (alist-get 'id (lab-last-item data))))
+             (setq all-items (append all-items data)))))
         all-items))
      (t
       (let ((json nil))

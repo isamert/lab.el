@@ -1,3 +1,7 @@
+* v2.4.1
+
+- Fix sync =%collect-all= call
+
 * v2.4.0
 
 - Make functions that takes a while to run non-blocking:  =lab-clone-bulk=, =lab-get-all-group-projects=, =lab-get-all-owned-projects= does not block while fetching project list.
