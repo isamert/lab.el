@@ -1,3 +1,7 @@
+* v2.4.2
+
+- Fix autloading issues
+
 * v2.4.1
 
 - Fix sync =%collect-all= call
