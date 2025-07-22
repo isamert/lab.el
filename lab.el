@@ -193,6 +193,23 @@ haven't installed consult."
   :group 'lab
   :type 'boolean)
 
+(defcustom lab-add-comment-hook '(lab-merge-request-diff-mode-update-header)
+  "Hooks to run after adding a comment.
+Called with the comment overlay."
+  :group 'lab
+  :type 'hook)
+
+(defcustom lab-remove-comment-hook '(lab-merge-request-diff-mode-update-header)
+  "Hooks to run after removing a comment.
+Called with the comment overlay."
+  :group 'lab
+  :type 'hook)
+
+(defcustom lab-send-review-hook '(lab-merge-request-diff-mode-update-header)
+  "Hooks to run after sending the review."
+  :group 'lab
+  :type 'hook)
+
 ;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
@@ -1627,6 +1644,7 @@ MR is an object created by `lab--parse-merge-request-url'."
   (let-alist mr (format "%s!%s" (url-unhex-string .project_id) .iid)))
 
 ;;;; Code review stuff
+;;;;; Utils
 
 (defun lab--all-comments-in-buffer ()
   (seq-filter
@@ -1724,30 +1742,38 @@ This function assumes you are currently on a hunk header."
      "+++ b/" .new_path "\n"
      .diff)))
 
+(defun lab-merge-request-diff-mode-update-header (&rest _)
+  (let* ((all (seq-group-by (lambda (ov) (overlay-get ov 'lab-comment-sent)) (lab--all-comments-in-buffer)))
+         (sent (length (alist-get t all)))
+         (pending (length (alist-get nil all))))
+    (setq-local header-line-format (substitute-command-keys (format "Review :: %s pending, %s sent comment(s)." pending sent)))))
+
+;;;;; Variables
+
 (defvar-local lab--merge-request-last-version nil)
 (defvar-local lab--merge-request nil)
 (defvar-local lab--merge-request-diffs nil)
 (defvar lab-merge-request-history nil)
 
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
-  "Mode for viewing and reviewing GitLab merge request."
-  (setq-local
-   header-line-format
-   (substitute-command-keys
-    "\\[lab-add-comment] → Add comment")))
+  "Mode for viewing and reviewing GitLab merge request.")
 
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c r") #'lab-remove-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c R") #'lab-remove-all-comments)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
 
+;;;;; Interactive
+
+;;;###autoload
 (defun lab-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
-In this buffer you can use the following functions:
-- `lab-add-comment' to add a comment for current (or selected) line(s).
-- `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
-- `lab-remove-comment' to remove a comment you added with `lab-add-comment'
-- `lab-remove-all-comments' to remove all comments."
+ In this buffer you can use the following functions:
+ - `lab-add-comment' to add a comment for current (or selected) line(s).
+ - `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
+ - `lab-remove-comment' to remove a comment you added with `lab-add-comment'
+ - `lab-remove-all-comments' to remove all comments."
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (threads (let-alist mr
@@ -1863,9 +1889,10 @@ In this buffer you can use the following functions:
                 (lambda (_window _obj pos)
                   (when (< pos (1- end))
                     (substitute-command-keys
-	             "\\[lab-edit-comment] → Edit, \\[lab-remove-comment] → Remove"))))))
+                     "\\[lab-edit-comment] → Edit, \\[lab-remove-comment] → Remove"))))))
            (when on-accept
-             (funcall on-accept ov))))))))
+             (funcall on-accept ov))
+           (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
 
 (defun lab-send-review ()
   (interactive)
@@ -1900,7 +1927,8 @@ In this buffer you can use the following functions:
                      :%type "POST"
                      :%headers '(("Content-Type" . "application/json"))
                      :%data (json-encode data))
-                (overlay-put ov 'lab-comment-sent t)))))))))
+                (overlay-put ov 'lab-comment-sent t))))))))
+  (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-edit-comment (ov)
   (interactive (list (lab--comment-overlay-at-point)))
@@ -1916,13 +1944,14 @@ In this buffer you can use the following functions:
   (interactive (list (lab--comment-overlay-at-point)))
   (when ov
     (delete-overlay ov)
-    (message "lab :: Comment removed")))
+    (message "lab :: Comment removed")
+    (seq-each (lambda (hook) (funcall hook ov)) lab-remove-comment-hook)))
 
 (defun lab-remove-all-comments ()
   (interactive)
   (let ((i 0))
     (dolist (ov (lab--all-comments-in-buffer))
-      (delete-overlay ov)
+      (lab-remove-comment ov)
       (setq i (1+ i)))
     (when (> i 0)
       (message "lab :: %s comment(s) removed" i))))
