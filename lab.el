@@ -762,7 +762,6 @@ Also see `lab-after-git-clone-functions'."
                (funcall callback nil))
            (message "Cloning %s is failed." url)))))))
 
-;;;###autoload
 (async-defun lab-clone-bulk (gitlab-group root)
   "Clone all repositories of GITLAB-GROUP into ROOT."
   (interactive (list
@@ -916,8 +915,6 @@ this check makes sense without any significant loss of functionality."
       (when-let* ((entry (car (auth-source-search :host lab-host :max 1)))
                   (secret-fn (plist-get entry :secret)))
         (funcall secret-fn))))
-
-;; FIXME: %collect-all? does not work with %async t
 
 ;;;###autoload
 (cl-defun lab--request
