@@ -1068,6 +1068,16 @@ Example:
                      (funcall %success data))))
         json)))))
 
+(defun lab--request-promise (&rest params)
+  "Promise version of `lab--request'."
+  (promise-new
+   (lambda (resolve reject)
+     (apply
+      #'lab--request
+      :%success (lambda (data) (funcall resolve data))
+      :%reject (lambda (data) (funcall reject data))
+      params))))
+
 (defun lab--open-web-url (url)
   (kill-new url)
   (funcall lab-browse-url-fn url))
@@ -1950,9 +1960,10 @@ This function assumes you are currently on a hunk header."
              (funcall on-accept ov))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
 
-(defun lab-send-review ()
+(async-defun lab-send-review ()
   (interactive nil lab-merge-request-diff-mode)
-  (when (y-or-n-p (format "Do you want to %s send comments to this MR?" lab--sent-comment-count))
+  (when (y-or-n-p (format "Do you want to %s send comments to this MR?" lab--pending-comment-count))
+    (message "lab :: Sending review...")
     (dolist (ov (lab--all-comments-in-buffer))
       (unless (overlay-get ov 'lab-comment-sent)
         (let (;; TODO: Using lab-comment-end here because we do not
@@ -1979,12 +1990,13 @@ This function assumes you are currently on a hunk header."
                                      ,@(when (or (s-prefix? "-" line) unchanged-line?)
                                          `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
               (let-alist lab--merge-request
-                (when (lab--request
-                       (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                       :%type "POST"
-                       :%headers '(("Content-Type" . "application/json"))
-                       :%data (json-encode data))
-                  (overlay-put ov 'lab-comment-sent t)))))))))
+                (when (await (lab--request-promise
+                              (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                              :%type "POST"
+                              :%headers '(("Content-Type" . "application/json"))
+                              :%data (json-encode data)))
+                  (overlay-put ov 'lab-comment-sent t))))))))
+    (message "lab :: Sending review... Done"))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-edit-comment (ov)
