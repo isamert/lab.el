@@ -1818,6 +1818,7 @@ This function assumes you are currently on a hunk header."
        (lab-open-merge-request-diff lab--merge-request-url))
       (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
 
+;; TODO: Find proper bindings
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-delete-comment)
@@ -1826,14 +1827,16 @@ This function assumes you are currently on a hunk header."
 
 ;;;;; Interactive
 
+;; TODO: Add next/prev thread/comment commands (and reveal it if its folded)
+
 ;;;###autoload
 (defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
- In this buffer you can use the following functions:
- - `lab-add-comment' to add a comment for current (or selected) line(s).
- - `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
- - `lab-delete-comment' to remove a comment you added with `lab-add-comment'
- - `lab-delete-all-comments' to remove all comments."
+In this buffer you can use the following functions:
+- `lab-add-comment' to add a comment for current (or selected) line(s).
+- `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
+- `lab-delete-comment' to remove a comment you added with `lab-add-comment'
+- `lab-delete-all-comments' to remove all comments."
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (threads (let-alist mr
