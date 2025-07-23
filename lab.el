@@ -210,6 +210,27 @@ Called with the comment overlay."
   :group 'lab
   :type 'hook)
 
+(defcustom lab-open-merge-request-diff-hook '(lab-merge-request-diff-mode-update-header)
+  "Hooks to run after sending the review.
+The hook is called on the diff buffer, while it's empty with the following:
+
+  (funcall fn :mr mr :diffs diffs :threads threads :versions versions)
+
+For example, to switch to a project before opening the diff—ensuring
+that jumping to files from the diff buffer works—you can do the
+following:
+
+  (add-hook
+   \\='lab-open-merge-request-diff-hook
+   (lambda (&rest _)
+     (cd (funcall project-prompter))))
+
+This lets you manually select a project using project.el and changes the
+`default-directory' of the diff buffer to the selected project's
+directory."
+  :group 'lab
+  :type 'hook)
+
 ;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
@@ -1767,7 +1788,7 @@ This function assumes you are currently on a hunk header."
 ;;;;; Interactive
 
 ;;;###autoload
-(defun lab-merge-request-diff (url)
+(defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
  In this buffer you can use the following functions:
  - `lab-add-comment' to add a comment for current (or selected) line(s).
@@ -1794,8 +1815,12 @@ This function assumes you are currently on a hunk header."
     (let ((inhibit-read-only t)
           (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
+        (lab-merge-request-diff-mode)
         (lab-remove-all-comments)
         (erase-buffer)
+        (seq-each
+         (lambda (fn) (funcall fn :mr mr :diffs diffs :threads threads :versions versions))
+         lab-open-merge-request-diff-hook)
         (dolist (diff diffs)
           (let ((hunk (lab--format-hunk diff)))
             (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
@@ -1832,7 +1857,6 @@ This function assumes you are currently on a hunk header."
                               (overlay-put ov 'after-string str)))))))
         (goto-char 0)
         (read-only-mode)
-        (lab-merge-request-diff-mode)
         (switch-to-buffer buffer-name)
         (setq-local lab--merge-request-last-version (car versions))
         (setq-local lab--merge-request mr)
