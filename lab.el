@@ -1772,12 +1772,20 @@ This function assumes you are currently on a hunk header."
 ;;;;; Variables
 
 (defvar-local lab--merge-request-last-version nil)
+(defvar-local lab--merge-request-url nil)
 (defvar-local lab--merge-request nil)
 (defvar-local lab--merge-request-diffs nil)
 (defvar lab-merge-request-history nil)
 
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
-  "Mode for viewing and reviewing GitLab merge request.")
+  "Mode for viewing and reviewing GitLab merge request."
+  (setq-local
+   revert-buffer-function
+   (lambda (_ignore-auto noconfirm)
+     (cond
+      ((and (not noconfirm) (y-or-n-p "Your review progress will be lost.  Want to reload?"))
+       (lab-open-merge-request-diff lab--merge-request-url))
+      (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
 
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
@@ -1859,6 +1867,7 @@ This function assumes you are currently on a hunk header."
         (read-only-mode)
         (switch-to-buffer buffer-name)
         (setq-local lab--merge-request-last-version (car versions))
+        (setq-local lab--merge-request-url url)
         (setq-local lab--merge-request mr)
         (setq-local lab--merge-request-diffs diffs)))))
 
