@@ -423,7 +423,8 @@ function is called if given and the buffer is simply killed."
                                                      (funcall parser))))
                                   (result (substring-no-properties (buffer-string))))
                               (kill-buffer buffer)
-                              (puthash history-key result lab--user-input-history)
+                              (when history-key
+                                (puthash history-key result lab--user-input-history))
                               (with-current-buffer source-buffer
                                 (if parser
                                     (funcall on-accept result parser-result)
@@ -439,7 +440,9 @@ function is called if given and the buffer is simply killed."
       (local-set-key (kbd "C-c C-c") success-handler)
       (local-set-key (kbd "C-c C-k") reject-handler)
       (setq header-line-format "Hit `C-c C-c' to save `C-c C-k' to reject.")
-      (insert (gethash history-key lab--user-input-history init))
+      (if history-key
+          (insert (gethash history-key lab--user-input-history init))
+        (insert init))
       (funcall on-start)
       (switch-to-buffer-other-window buffer))))
 
