@@ -1844,12 +1844,16 @@ This function assumes you are currently on a hunk header."
                         ;; current revision or older one first. Older
                         ;; ones may cause errors (line boundary issues
                         ;; etc.)
-                        (lab--diff-goto-line
-                         .position.old_path
-                         .position.new_path
-                         (intern .position.line_range.end.type)
-                         (alist-get (intern (concat .position.line_range.end.type "_line"))
-                                    .position.line_range.end))
+                        (let ((type (or .position.line_range.end.type
+                                        (if .position.new_line "new" "old"))))
+                          (lab--diff-goto-line
+                           .position.old_path
+                           .position.new_path
+                           (intern type)
+                           (or (alist-get (intern (concat type "_line"))
+                                          .position.line_range.end)
+                               (alist-get (intern (concat type  "_line"))
+                                          .position))))
                         ;; TODO: Add overlays
                         (let ((ov (make-overlay (point) (1+ (point-at-eol)))))
                           (save-excursion
