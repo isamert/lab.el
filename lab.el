@@ -1840,7 +1840,7 @@ This function assumes you are currently on a hunk header."
 
 ;; TODO: Remove quick-peek dependencies
 (cl-defun lab-add-comment (&key (init "") on-accept)
-  (interactive)
+  (interactive nil lab-merge-request-diff-mode)
   (let* ((oldwin (current-window-configuration))
          (beg (if (use-region-p)
                   (save-excursion
@@ -1895,7 +1895,7 @@ This function assumes you are currently on a hunk header."
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
 
 (defun lab-send-review ()
-  (interactive)
+  (interactive nil lab-merge-request-diff-mode)
   (dolist (ov (lab--all-comments-in-buffer))
     (unless (overlay-get ov 'lab-comment-sent)
       (let (;; TODO: Using lab-comment-end here because we do not
@@ -1931,7 +1931,7 @@ This function assumes you are currently on a hunk header."
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-edit-comment (ov)
-  (interactive (list (lab--comment-overlay-at-point)))
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (lab--mark-comment-region ov)
     (lab-add-comment
@@ -1941,14 +1941,14 @@ This function assumes you are currently on a hunk header."
        (lab-remove-comment ov)))))
 
 (defun lab-remove-comment (ov)
-  (interactive (list (lab--comment-overlay-at-point)))
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (delete-overlay ov)
     (message "lab :: Comment removed")
     (seq-each (lambda (hook) (funcall hook ov)) lab-remove-comment-hook)))
 
 (defun lab-remove-all-comments ()
-  (interactive)
+  (interactive nil lab-merge-request-diff-mode)
   (let ((i 0))
     (dolist (ov (lab--all-comments-in-buffer))
       (lab-remove-comment ov)
