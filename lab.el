@@ -1989,6 +1989,10 @@ This function assumes you are currently on a hunk header."
     (when (> i 0)
       (message "lab :: %s comment(s) removed" i))))
 
+(defun lab-open-merge-request-on-web ()
+  (interactive nil lab-merge-request-diff-mode)
+  (browse-url lab--merge-request-url))
+
 ;;;; Merge request overview
 
 ;; TODO: List all previous notes: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#list-project-merge-request-discussion-items
