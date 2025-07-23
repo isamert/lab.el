@@ -199,7 +199,7 @@ Called with the comment overlay."
   :group 'lab
   :type 'hook)
 
-(defcustom lab-remove-comment-hook '(lab-merge-request-diff-mode-update-header)
+(defcustom lab-delete-comment-hook '(lab-merge-request-diff-mode-update-header)
   "Hooks to run after removing a comment.
 Called with the comment overlay."
   :group 'lab
@@ -1781,8 +1781,8 @@ This function assumes you are currently on a hunk header."
 
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c r") #'lab-remove-comment)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c R") #'lab-remove-all-comments)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-delete-comment)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c D") #'lab-delete-all-comments)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
 
 ;;;;; Interactive
@@ -1793,8 +1793,8 @@ This function assumes you are currently on a hunk header."
  In this buffer you can use the following functions:
  - `lab-add-comment' to add a comment for current (or selected) line(s).
  - `lab-edit-comment' to edit a comment you added with `lab-add-comment'.
- - `lab-remove-comment' to remove a comment you added with `lab-add-comment'
- - `lab-remove-all-comments' to remove all comments."
+ - `lab-delete-comment' to remove a comment you added with `lab-add-comment'
+ - `lab-delete-all-comments' to remove all comments."
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (threads (let-alist mr
@@ -1816,7 +1816,7 @@ This function assumes you are currently on a hunk header."
           (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
         (lab-merge-request-diff-mode)
-        (lab-remove-all-comments)
+        (lab-delete-all-comments)
         (erase-buffer)
         (seq-each
          (lambda (fn) (funcall fn :mr mr :diffs diffs :threads threads :versions versions))
@@ -1913,7 +1913,7 @@ This function assumes you are currently on a hunk header."
                 (lambda (_window _obj pos)
                   (when (< pos (1- end))
                     (substitute-command-keys
-                     "\\[lab-edit-comment] → Edit, \\[lab-remove-comment] → Remove"))))))
+                     "\\[lab-edit-comment] → Edit, \\[lab-delete-comment] → Remove"))))))
            (when on-accept
              (funcall on-accept ov))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
@@ -1962,20 +1962,20 @@ This function assumes you are currently on a hunk header."
      :init (overlay-get ov 'lab-comment-input)
      :on-accept
      (lambda (_ov)
-       (lab-remove-comment ov)))))
+       (lab-delete-comment ov)))))
 
-(defun lab-remove-comment (ov)
+(defun lab-delete-comment (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (delete-overlay ov)
     (message "lab :: Comment removed")
-    (seq-each (lambda (hook) (funcall hook ov)) lab-remove-comment-hook)))
+    (seq-each (lambda (hook) (funcall hook ov)) lab-delete-comment-hook)))
 
-(defun lab-remove-all-comments ()
+(defun lab-delete-all-comments ()
   (interactive nil lab-merge-request-diff-mode)
   (let ((i 0))
     (dolist (ov (lab--all-comments-in-buffer))
-      (lab-remove-comment ov)
+      (lab-delete-comment ov)
       (setq i (1+ i)))
     (when (> i 0)
       (message "lab :: %s comment(s) removed" i))))
