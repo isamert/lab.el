@@ -1666,10 +1666,16 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 ;;;; Code review stuff
 ;;;;; Utils
+;;;;;; Overlays
 
 (defun lab--all-comments-in-buffer ()
   (seq-filter
    (lambda (ov) (overlay-get ov 'lab-comment))
+   (overlays-in (point-min) (point-max))))
+
+(defun lab--all-threads-in-buffer ()
+  (seq-filter
+   (lambda (ov) (overlay-get ov 'lab-thread))
    (overlays-in (point-min) (point-max))))
 
 (defun lab--comment-overlay-at-point ()
@@ -1682,6 +1688,12 @@ MR is an object created by `lab--parse-merge-request-url'."
   (set-mark-command nil)
   (goto-char (overlay-get ov 'lab-comment-end))
   (exchange-point-and-mark))
+
+(defun lab--delete-all-threads ()
+  (dolist (ov (lab--all-threads-in-buffer))
+    (delete-overlay ov)))
+
+;;;;;; Diff stuff
 
 (defun lab--diff-find-line-number-at (pos &optional old?)
   (save-match-data
@@ -1763,10 +1775,14 @@ This function assumes you are currently on a hunk header."
      "+++ b/" .new_path "\n"
      .diff)))
 
+;;;;;; Other
+
 (defun lab-merge-request-diff-mode-update-header (&rest _)
   (let* ((all (seq-group-by (lambda (ov) (overlay-get ov 'lab-comment-sent)) (lab--all-comments-in-buffer)))
          (sent (length (alist-get t all)))
          (pending (length (alist-get nil all))))
+    (setq-local lab--pending-comment-count pending)
+    (setq-local lab--sent-comment-count sent)
     (setq-local header-line-format (substitute-command-keys (format "Review :: %s pending, %s sent comment(s)." pending sent)))))
 
 ;;;;; Variables
@@ -1775,6 +1791,8 @@ This function assumes you are currently on a hunk header."
 (defvar-local lab--merge-request-url nil)
 (defvar-local lab--merge-request nil)
 (defvar-local lab--merge-request-diffs nil)
+(defvar-local lab--pending-comment-count 0)
+(defvar-local lab--sent-comment-count 0)
 (defvar lab-merge-request-history nil)
 
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
@@ -1825,6 +1843,7 @@ This function assumes you are currently on a hunk header."
       (with-current-buffer (get-buffer-create buffer-name)
         (lab-merge-request-diff-mode)
         (lab-delete-all-comments)
+        (lab--delete-all-threads)
         (erase-buffer)
         (seq-each
          (lambda (fn) (funcall fn :mr mr :diffs diffs :threads threads :versions versions))
@@ -1933,38 +1952,39 @@ This function assumes you are currently on a hunk header."
 
 (defun lab-send-review ()
   (interactive nil lab-merge-request-diff-mode)
-  (dolist (ov (lab--all-comments-in-buffer))
-    (unless (overlay-get ov 'lab-comment-sent)
-      (let (;; TODO: Using lab-comment-end here because we do not
-            ;; support ranges right now
-            (pt (prog1 (overlay-get ov 'lab-comment-end)
-                  (goto-char (overlay-get ov 'lab-comment-end)))))
-        (save-excursion
-          (goto-char pt)
-          (let* ((line (thing-at-point 'line))
-                 (unchanged-line? (s-matches? "^ " line))
-                 (diff (get-text-property (point) 'lab-diff))
-                 (data
-                  (let-alist lab--merge-request-last-version
-                    `((body . ,(overlay-get ov 'lab-comment-input))
-                      (position . ((base_sha . ,.base_commit_sha)
-                                   (start_sha . ,.start_commit_sha)
-                                   (head_sha . ,.head_commit_sha)
-                                   (position_type . "text")
-                                   (old_path . ,(alist-get 'old_path diff))
-                                   (new_path . ,(alist-get 'new_path diff))
-                                   ;; (line_range . "TODO")
-                                   ,@(when (or (s-prefix? "+" line) unchanged-line?)
-                                       `((new_line . ,(lab--diff-find-line-number-at pt))))
-                                   ,@(when (or (s-prefix? "-" line) unchanged-line?)
-                                       `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
-            (let-alist lab--merge-request
-              (when (lab--request
-                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                     :%type "POST"
-                     :%headers '(("Content-Type" . "application/json"))
-                     :%data (json-encode data))
-                (overlay-put ov 'lab-comment-sent t))))))))
+  (when (y-or-n-p (format "Do you want to %s send comments to this MR?" lab--sent-comment-count))
+    (dolist (ov (lab--all-comments-in-buffer))
+      (unless (overlay-get ov 'lab-comment-sent)
+        (let (;; TODO: Using lab-comment-end here because we do not
+              ;; support ranges right now
+              (pt (prog1 (overlay-get ov 'lab-comment-end)
+                    (goto-char (overlay-get ov 'lab-comment-end)))))
+          (save-excursion
+            (goto-char pt)
+            (let* ((line (thing-at-point 'line))
+                   (unchanged-line? (s-matches? "^ " line))
+                   (diff (get-text-property (point) 'lab-diff))
+                   (data
+                    (let-alist lab--merge-request-last-version
+                      `((body . ,(overlay-get ov 'lab-comment-input))
+                        (position . ((base_sha . ,.base_commit_sha)
+                                     (start_sha . ,.start_commit_sha)
+                                     (head_sha . ,.head_commit_sha)
+                                     (position_type . "text")
+                                     (old_path . ,(alist-get 'old_path diff))
+                                     (new_path . ,(alist-get 'new_path diff))
+                                     ;; (line_range . "TODO")
+                                     ,@(when (or (s-prefix? "+" line) unchanged-line?)
+                                         `((new_line . ,(lab--diff-find-line-number-at pt))))
+                                     ,@(when (or (s-prefix? "-" line) unchanged-line?)
+                                         `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
+              (let-alist lab--merge-request
+                (when (lab--request
+                       (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                       :%type "POST"
+                       :%headers '(("Content-Type" . "application/json"))
+                       :%data (json-encode data))
+                  (overlay-put ov 'lab-comment-sent t)))))))))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-edit-comment (ov)
