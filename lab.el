@@ -211,7 +211,7 @@ Called with the comment overlay."
   :type 'hook)
 
 (defcustom lab-open-merge-request-diff-hook '(lab-merge-request-diff-mode-update-header)
-  "Hooks to run after sending the review.
+  "Hooks to run after opening the merge request diff.
 The hook is called on the diff buffer, while it's empty with the following:
 
   (funcall fn :mr mr :diffs diffs :threads threads :versions versions)
@@ -1494,7 +1494,7 @@ enter additional environment variables interactively."
           (lambda (it) (funcall it result))
           lab-after-merge-request-mark-ready-functions)))
    (?d "Diff & Review"
-       (lab-merge-request-diff .web_url))
+       (lab-open-merge-request-diff .web_url))
    (?t "Threads & overview"
        (lab-merge-request-overview .web_url))
    (?r "Rebase"
@@ -1706,6 +1706,60 @@ MR is an object created by `lab--parse-merge-request-url'."
   (dolist (ov (lab--all-threads-in-buffer))
     (delete-overlay ov)))
 
+;; TODO: Remove quick-peek dependencies
+(cl-defun lab--put-review-overlay (beg end &key (header "") content (offset 0) type)
+  (let* ((ov (save-excursion
+               (goto-char end)
+               (make-overlay beg end)))
+         (text (with-temp-buffer
+                 (insert content "\n")
+                 (delay-mode-hooks
+                   (markdown-mode)
+                   (font-lock-ensure))
+                 (quick-peek--prefix-all-lines (propertize "│" 'face 'slack-block-highlight-source-overlay-face))
+                 (let ((char-property-alias-alist '((face font-lock-face))))
+                   (font-lock-append-text-property (point-min) (point-max) 'face 'quick-peek-background-face))
+                 (lab--spacer (point-min) :header header :pre "  ")
+                 (lab--spacer (point-max))
+                 (buffer-string))))
+    (save-excursion
+      (goto-char (overlay-start ov))
+      (when (eq type 'comment)
+        (overlay-put ov 'lab-comment t))
+      (when (eq type 'thread)
+        (overlay-put ov 'lab-thread t))
+      (overlay-put ov 'lab-comment-input content)
+      (overlay-put ov 'lab-comment-beginning beg)
+      (overlay-put ov 'lab-comment-end end)
+      (overlay-put ov 'after-string text)
+      (overlay-put
+       ov 'kbd-help
+       (lambda (_window _obj pos)
+         (when (< pos (1- end))
+           (pcase type
+             ('comment (substitute-command-keys
+                        "\\[lab-edit-comment] → Edit, \\[lab-delete-comment] → Remove"))
+             ;; TODO: Resolve/reopen according to it's status
+             ('thread (substitute-command-keys
+                       "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve")))))))))
+
+;; (lab-delete-all-comments)
+;; (lab--delete-all-threads)
+;; (lab--put-review-overlay (point-at-eol) (point-at-eol) :content "hahahhaahajk" :type 'thread :offset 1)
+
+(cl-defun lab--spacer (pos &key pre header)
+  (save-excursion
+    (goto-char pos)
+    (insert (propertize "\n" 'face 'quick-peek-padding-face))
+    (let* ((color (or (face-attribute 'highlight :background) "black")))
+      (insert
+       (propertize (if pre pre "") 'face `(:background ,color :inherit quick-peek-border-face))
+       (if header
+           (propertize (concat " " header " ") 'face `(:background ,color :inherit quick-peek-background-face))
+         "")
+       (propertize "\n" 'face `(:background ,color :inherit quick-peek-border-face))))
+    (insert (propertize "\n" 'face 'quick-peek-padding-face))))
+
 ;;;;;; Diff stuff
 
 (defun lab--diff-find-line-number-at (pos &optional old?)
@@ -1869,39 +1923,25 @@ In this buffer you can use the following functions:
             (add-text-properties 0 (length hunk) `(lab-diff ,diff) hunk)
             (insert hunk)))
         (dolist (thread threads)
-          ;; TODO: Do not loop all notes, do it only for first note and append
-          ;; others to beneath it
-          (cl-loop for note in (alist-get 'notes thread)
-                   as first-note = (car (alist-get 'notes thread))
-                   when (equal (alist-get 'type first-note) "DiffNote")
-                   do (let-alist note
-                        ;; TODO: Check if this diff belongs to the
-                        ;; current revision or older one first. Older
-                        ;; ones may cause errors (line boundary issues
-                        ;; etc.)
-                        (let ((type (or .position.line_range.end.type
-                                        (if .position.new_line "new" "old"))))
-                          (lab--diff-goto-line
-                           .position.old_path
-                           .position.new_path
-                           (intern type)
-                           (or (alist-get (intern (concat type "_line"))
-                                          .position.line_range.end)
-                               (alist-get (intern (concat type  "_line"))
-                                          .position))))
-                        ;; TODO: Add overlays
-                        (let ((ov (make-overlay (point) (1+ (point-at-eol)))))
-                          (save-excursion
-                            (goto-char (overlay-start ov))
-                            (let* ((offset
-                                    (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
-                                   (str
-                                    (quick-peek--prepare-overlay-string .body offset)))
-                              (overlay-put ov 'lab-thread t)
-                              ;; (overlay-put ov 'lab-comment-input input)
-                              ;; (overlay-put ov 'lab-comment-beginning beg)
-                              ;; (overlay-put ov 'lab-comment-end end)
-                              (overlay-put ov 'after-string str)))))))
+          (let* ((notes (alist-get 'notes thread))
+                 (first-note (car notes)))
+            (when (equal (alist-get 'type first-note) "DiffNote")
+              (let-alist first-note
+                (let ((type (or .position.line_range.end.type
+                                (if .position.new_line "new" "old"))))
+                  (lab--diff-goto-line
+                   .position.old_path
+                   .position.new_path
+                   (intern type)
+                   (or (alist-get (intern (concat type "_line"))
+                                  .position.line_range.end)
+                       (alist-get (intern (concat type  "_line"))
+                                  .position)))))
+              (lab--put-review-overlay
+               (point) (1+ (point-at-eol))
+               :offset 1
+               :type 'thread
+               :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))))
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)
@@ -1910,7 +1950,6 @@ In this buffer you can use the following functions:
         (setq-local lab--merge-request mr)
         (setq-local lab--merge-request-diffs diffs)))))
 
-;; TODO: Remove quick-peek dependencies
 (cl-defun lab-add-comment (&key (init "") on-accept)
   (interactive nil lab-merge-request-diff-mode)
   (let* ((oldwin (current-window-configuration))
@@ -1946,22 +1985,7 @@ In this buffer you can use the following functions:
                      (make-overlay beg (1+ (point-at-eol))))))
            (save-excursion
              (goto-char (overlay-start ov))
-             (let* ((offset
-                     (quick-peek--text-width (quick-peek--point-at-bovl) (point)))
-                    (str
-                     (quick-peek--prepare-overlay-string
-                      (concat (propertize info 'face '(:slant italic)) "\n" input) offset)))
-               (overlay-put ov 'lab-comment t)
-               (overlay-put ov 'lab-comment-input input)
-               (overlay-put ov 'lab-comment-beginning beg)
-               (overlay-put ov 'lab-comment-end end)
-               (overlay-put ov 'after-string str)
-               (overlay-put
-                ov 'help-echo
-                (lambda (_window _obj pos)
-                  (when (< pos (1- end))
-                    (substitute-command-keys
-                     "\\[lab-edit-comment] → Edit, \\[lab-delete-comment] → Remove"))))))
+             (lab--put-review-overlay beg end :content input :type 'comment))
            (when on-accept
              (funcall on-accept ov))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
@@ -2110,7 +2134,7 @@ author information and timestamps."
         (let-alist mr-info
           (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
           (insert (format "[[%s][Open at web]] | " url))
-          (insert (format "[[elisp:(lab-merge-request-diff \"%s\")][Diff & review]] | " url))
+          (insert (format "[[elisp:(lab-open-merge-request-diff \"%s\")][Diff & review]] | " url))
           (insert (format "[[elisp:(lab-merge-request-overview \"%s\")][Refresh]] | " url))
           (insert-button
            "Inspect"
