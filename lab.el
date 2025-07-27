@@ -1867,7 +1867,8 @@ This function assumes you are currently on a hunk header."
 
 ;;;;; Variables
 
-(defvar-local lab--merge-request-last-version nil)
+(defvar-local lab--merge-request-versions nil)
+(defvar-local lab--merge-request-threads nil)
 (defvar-local lab--merge-request-url nil)
 (defvar-local lab--merge-request nil)
 (defvar-local lab--merge-request-diffs nil)
@@ -1893,6 +1894,11 @@ This function assumes you are currently on a hunk header."
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c f") #'lab-forward-merge-request-thread)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c b") #'lab-backward-merge-request-thread)
+
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c i m") #'lab-inspect-merge-request)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c i v") #'lab-inspect-merge-request-versions)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c i t") #'lab-inspect-merge-request-threads)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c i d") #'lab-inspect-merge-request-diffs)
 
 ;;;;; Interactive
 
@@ -1960,9 +1966,10 @@ In this buffer you can use the following functions:
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)
-        (setq-local lab--merge-request-last-version (car versions))
+        (setq-local lab--merge-request-versions versions)
         (setq-local lab--merge-request-url url)
         (setq-local lab--merge-request mr)
+        (setq-local lab--merge-request-threads threads)
         (setq-local lab--merge-request-diffs diffs)))))
 
 (cl-defun lab-add-comment (&key (init "") on-accept)
@@ -2021,7 +2028,7 @@ In this buffer you can use the following functions:
                    (unchanged-line? (s-matches? "^ " line))
                    (diff (get-text-property (point) 'lab-diff))
                    (data
-                    (let-alist lab--merge-request-last-version
+                    (let-alist (car lab--merge-request-versions) ; last version
                       `((body . ,(overlay-get ov 'lab-comment-input))
                         (position . ((base_sha . ,.base_commit_sha)
                                      (start_sha . ,.start_commit_sha)
@@ -2108,6 +2115,41 @@ In this buffer you can use the following functions:
   "Reveal jumped thread."
   (when (bound-and-true-p outline-minor-mode)
     (outline-show-subtree)))
+
+;;;;;; Interactive helpers
+
+(defun lab-inspect-merge-request-versions ()
+  "Display the *versions* object of the current buffer's merge request.
+This is the object returned by the GitLab API.  Useful for development
+or if you want to see information that is not exposed in the merge
+request diff interface."
+  (interactive nil lab-merge-request-diff-mode)
+  (lab--inspect-obj lab--merge-request-versions))
+
+(defun lab-inspect-merge-request ()
+  "Display the *merge request* object of the current buffer's merge request.
+This is the object returned by the GitLab API.  Useful for development
+or if you want to see information that is not exposed in the merge
+request diff interface."
+  (interactive nil lab-merge-request-diff-mode)
+  (lab--inspect-obj lab--merge-request))
+
+(defun lab-inspect-merge-request-threads ()
+  "Display the *threads* object of the current buffer's merge request.
+This is the object returned by the GitLab API.  Useful for development
+or if you want to see information that is not exposed in the merge
+request diff interface."
+  (interactive nil lab-merge-request-diff-mode)
+  (lab--inspect-obj lab--merge-request-threads))
+
+(defun lab-inspect-merge-request-diffs ()
+  "Display the *diffs* object of the current buffer's merge request.
+This is the object returned by the GitLab API.  Useful for development
+or if you want to see information that is not exposed in the merge
+request diff interface."
+  (interactive nil lab-merge-request-diff-mode)
+  (lab--inspect-obj lab--merge-request-diffs))
+
 
 ;;;; Merge request overview
 
