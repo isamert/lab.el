@@ -231,6 +231,19 @@ directory."
   :group 'lab
   :type 'hook)
 
+(defcustom lab-jump-to-thread-hook '(lab--reveal-thread)
+  "Hooks that runs after jumping to a thread programatically.
+In practice, this means they are called after calling
+`lab-forward-merge-request-thread' or
+`lab-backward-merge-request-thread' functions.
+
+For example, if you want to automatically center the screen to the
+thread, you can do the following:
+
+  (add-hook \\='lab-jump-to-thread-hook (lambda () (recenter)))"
+  :group 'lab
+  :type 'hook)
+
 ;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
@@ -1878,6 +1891,8 @@ This function assumes you are currently on a hunk header."
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-delete-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c D") #'lab-delete-all-comments)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c f") #'lab-forward-merge-request-thread)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c b") #'lab-backward-merge-request-thread)
 
 ;;;;; Interactive
 
@@ -2058,6 +2073,41 @@ In this buffer you can use the following functions:
 (defun lab-open-merge-request-on-web ()
   (interactive nil lab-merge-request-diff-mode)
   (browse-url lab--merge-request-url))
+
+(defun lab-forward-merge-request-thread ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let* ((ovs (seq-filter
+               (lambda (ov)
+                 (or (overlay-get ov 'lab-thread)
+                     (overlay-get ov 'lab-comment)))
+               (overlays-in (point) (point-max))))
+         (next (seq-find (lambda (ov) (> (overlay-start ov) (point))) ovs)))
+    (if next
+        (progn
+          (goto-char (overlay-start next))
+          (seq-each #'funcall lab-jump-to-thread-hook))
+      (user-error "No more threads/comments ahead"))))
+
+(defun lab-backward-merge-request-thread ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let* ((ovs (reverse
+               (seq-filter
+                (lambda (ov)
+                  (or (overlay-get ov 'lab-thread)
+                      (overlay-get ov 'lab-comment)))
+                (overlays-in (point-min) (point)))))
+         (prev (seq-find (lambda (ov) (< (overlay-start ov) (point))) ovs)))
+    (if prev
+        (progn
+          (goto-char (overlay-start prev))
+          (seq-each #'funcall lab-jump-to-thread-hook))
+      (user-error "No more threads/comments behind"))))
+
+(declare-function outline-show-subtree "outline")
+(defun lab--reveal-thread ()
+  "Reveal jumped thread."
+  (when (bound-and-true-p outline-minor-mode)
+    (outline-show-subtree)))
 
 ;;;; Merge request overview
 
