@@ -1923,8 +1923,8 @@ In this buffer you can use the following functions:
           ;; ^ This retrieves the raw diff directly but it's added on GitLab v17.9
           (let-alist mr
             (lab--request
-             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid
-                     :%collect-all? t))))
+             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)
+             :%collect-all? t)))
          (versions
           (let-alist mr
             (lab--request
@@ -1950,19 +1950,24 @@ In this buffer you can use the following functions:
               (let-alist first-note
                 (let ((type (or .position.line_range.end.type
                                 (if .position.new_line "new" "old"))))
-                  (lab--diff-goto-line
-                   .position.old_path
-                   .position.new_path
-                   (intern type)
-                   (or (alist-get (intern (concat type "_line"))
-                                  .position.line_range.end)
-                       (alist-get (intern (concat type  "_line"))
-                                  .position)))))
-              (lab--put-review-overlay
-               (point) (1+ (point-at-eol))
-               :offset 1
-               :type 'thread
-               :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))))
+                  (condition-case nil
+                      (progn
+                        (lab--diff-goto-line
+                         .position.old_path
+                         .position.new_path
+                         (intern type)
+                         (or (alist-get (intern (concat type "_line"))
+                                        .position.line_range.end)
+                             (alist-get (intern (concat type  "_line"))
+                                        .position)))
+                        ;; TODO: Show more aesthetically pleasing threads/comments
+                        (lab--put-review-overlay
+                         (point) (1+ (pos-eol))
+                         :offset 1
+                         :type 'thread
+                         :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))
+                    ;; TODO: Instead of skipping all errors, throw something specific that is skippable
+                    (error (message "Skipping this diff.."))))))))
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)
