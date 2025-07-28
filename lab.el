@@ -1922,9 +1922,13 @@ In this buffer you can use the following functions:
           ;; GET /projects/:id/merge_requests/:merge_request_iid/raw_diffs
           ;; ^ This retrieves the raw diff directly but it's added on GitLab v17.9
           (let-alist mr
+            ;; FIXME: needs :%collect-all? t but this endpoint does
+            ;; not support keyset pagination (and keyset pagination in
+            ;; general is getting rolled out), so I need to update
+            ;; lab--request and here. See:
+            ;; https://docs.gitlab.com/api/rest/#pagination
             (lab--request
-             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)
-             :%collect-all? t)))
+             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid))))
          (versions
           (let-alist mr
             (lab--request
