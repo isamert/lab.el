@@ -1835,7 +1835,7 @@ This function assumes you are currently on a hunk header."
                                      (?\s 'same)
                                      (?+ 'new)
                                      (?- 'old)
-                                     (otherwise (error "Malformed diff line")))))
+                                     (_ (error "Malformed diff line")))))
                     (setq current-line
                           (cond
                            ((or (eq line-type 'same)
@@ -1851,9 +1851,15 @@ This function assumes you are currently on a hunk header."
   (let-alist hunk
     (concat
      (format "diff --git a/%s b/%s\n" .old_path .new_path)
-     "--- a/" .old_path "\n"
-     "+++ b/" .new_path "\n"
-     .diff)))
+     (if .new_file
+         (format "new file mode %s\n" .b_mode)
+       "")
+     (if (and (not .new_file) (not .deleted_file) (not (equal .a_mode .b_mode)))
+         (format "old mode %s\nnew mode %s\n" .a_mode .b_mode)
+       "")
+     "--- " (if .new_file     "/dev/null" (concat "a/" .old_path)) "\n"
+     "+++ " (if .deleted_file "/dev/null" (concat "b/" .new_path)) "\n"
+     (or .diff ""))))
 
 ;;;;;; Other
 
