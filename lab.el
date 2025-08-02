@@ -1071,7 +1071,7 @@ Example:
           (funcall
            make-request lastid
            (lambda (data)
-             (setq lastid (while (lab--length= data lab--max-per-page-result-count)
+             (setq lastid (when (lab--length= data lab--max-per-page-result-count)
                             (alist-get 'id (lab-last-item data))))
              (setq all-items (append all-items data)))))
         all-items))
