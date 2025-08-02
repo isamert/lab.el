@@ -531,7 +531,7 @@ function is called if given and the buffer is simply killed."
                            (completing-read
                             lab--action-selection-title
                             ',(mapcar (lambda (keydef) (nth 1 keydef)) keymap)))))
-                (action-fn (,lab--generate-action-name ',category action)))
+                (action-fn (funcall ,lab--generate-action-name ',category action)))
            (funcall action-fn item)))
 
        (cl-defun ,(funcall lab--generate-action-name category "select-and-act-on" t) (items)
@@ -1494,7 +1494,7 @@ enter additional environment variables interactively."
   ((?o "Open"
        (lab--open-web-url .web_url))
    (?s "Show"
-       (lab-merge-request-show .web_url))
+       (lab-open-merge-request-diff .web_url))
    (?c "Copy url"
        (kill-new .web_url))
    (?m "Mark as ready"
@@ -1720,7 +1720,7 @@ MR is an object created by `lab--parse-merge-request-url'."
     (delete-overlay ov)))
 
 ;; TODO: Remove quick-peek dependencies
-(cl-defun lab--put-review-overlay (beg end &key (header "") content (offset 0) type)
+(cl-defun lab--put-review-overlay (beg end &key (header "") content type)
   (let* ((ov (save-excursion
                (goto-char end)
                (make-overlay beg end)))
@@ -1782,7 +1782,6 @@ MR is an object created by `lab--parse-merge-request-url'."
       (beginning-of-line)
       (let* ((pt (point))
              (start (save-excursion (diff-beginning-of-hunk)))
-             (end (save-excursion (diff-end-of-hunk)))
              (hunk-part (buffer-substring-no-properties start pt))
              (lines (s-lines hunk-part))
              start-line)
@@ -1993,14 +1992,14 @@ In this buffer you can use the following functions:
          (beg (if (use-region-p)
                   (save-excursion
                     (goto-char (region-beginning))
-                    (point-at-bol))
-                (point-at-bol)))
+                    (pos-bol))
+                (pos-bol)))
          (end (if (use-region-p)
                   (save-excursion
                     (goto-char (region-end))
                     (forward-char -1)
-                    (point-at-eol))
-                (point-at-eol)))
+                    (pos-eol))
+                (pos-eol)))
          (info (if (use-region-p)
                    (format "↑ %s lines ↑" (count-lines beg end))
                  ""))
@@ -2019,7 +2018,7 @@ In this buffer you can use the following functions:
          (deactivate-mark)
          (let ((ov (save-excursion
                      (goto-char end)
-                     (make-overlay beg (1+ (point-at-eol))))))
+                     (make-overlay beg (1+ (pos-eol))))))
            (save-excursion
              (goto-char (overlay-start ov))
              (lab--put-review-overlay beg end :content input :type 'comment))
@@ -2174,12 +2173,6 @@ request diff interface."
 ;; TODO: Delete an existing note: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#delete-a-merge-request-thread-note
 ;; TODO: Resolve a thread: https://archives.docs.gitlab.com/15.11/ee/api/discussions.html#resolve-a-merge-request-thread
 
-(defun lab--merge-request-threads (mr)
-  (let-alist mr
-    (lab--request
-     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-     :%collect-all? t)))
-
 (defun lab--find-mr-version-for-diff-pos (diff-pos mr-versions)
   (seq-find
    (lambda (mr-ver)
@@ -2199,6 +2192,8 @@ This only does what's required for the merge request thread messages."
      "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
      (format "[[%s/\\2][\\1]]" lab-host))))
 
+(declare-function org-fold-hide-sublevels "org-fold")
+(declare-function org-fold-hide-drawer-all "org-fold")
 (defun lab-merge-request-overview (url)
   "Display merge request threads with diffs and notes in an org-mode buffer.
 
@@ -2211,14 +2206,16 @@ author information and timestamps."
   (let ((mr (lab--parse-merge-request-url url)))
     (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
       (erase-buffer)
-      (let* ((diffs (make-hash-table))
-             (mr-info (let-alist mr
+      (let* ((mr-info (let-alist mr
                         (lab--request
                          (format "projects/%s/merge_requests/%s" .project_id .iid))))
              (mr-versions (let-alist mr
                             (lab--request
                              (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
-             (mr-threads (lab--merge-request-threads mr))
+             (mr-threads (let-alist mr
+                           (lab--request
+                            (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                            :%collect-all? t)))
              (diff-positions (thread-last
                                mr-threads
                                (seq-map (lambda (thread) (car (alist-get 'notes thread))))
@@ -2271,7 +2268,7 @@ author information and timestamps."
                                    (alist-get 'resolved first-note))
                         ('(t t) " DONE")
                         ('(t nil) " TODO")
-                        (otherwise ""))
+                        (_ ""))
                       " Thread\n")
               (insert ":PROPERTIES:" "\n"
                       ":ID: " (alist-get 'id thread) "\n"
