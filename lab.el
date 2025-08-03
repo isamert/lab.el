@@ -1809,7 +1809,7 @@ This function assumes you are currently on a hunk header."
                       (point))))
         (found nil))
     (unless file-pos
-      (error "Path not found in diff: old_path:%s, new_path:%s" old-path new-path))
+      (signal 'diff-goto-line-error (format "Path not found in diff: old_path:%s, new_path:%s" old-path new-path)))
     (goto-char file-pos)
     (diff-hunk-next)
     (while (not found)
@@ -1834,7 +1834,7 @@ This function assumes you are currently on a hunk header."
                                      (?\s 'same)
                                      (?+ 'new)
                                      (?- 'old)
-                                     (_ (error "Malformed diff line")))))
+                                     (_ (signal 'diff-goto-line-error "Malformed diff line")))))
                     (setq current-line
                           (cond
                            ((or (eq line-type 'same)
@@ -1844,7 +1844,7 @@ This function assumes you are currently on a hunk header."
           (let ((next-hunk-pos (save-excursion (diff-hunk-next) (point))))
             (if (< next-hunk-pos boundary)
                 (goto-char next-hunk-pos)
-              (error "Line not found in this file"))))))))
+              (signal 'diff-goto-line-error "Line not found in this file"))))))))
 
 (defun lab--format-hunk (hunk)
   (let-alist hunk
@@ -1975,8 +1975,7 @@ In this buffer you can use the following functions:
                          :offset 1
                          :type 'thread
                          :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))
-                    ;; TODO: Instead of skipping all errors, throw something specific that is skippable
-                    (error (message "Skipping this diff.."))))))))
+                    (diff-goto-line-error (message "Skipping this diff.."))))))))
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)
