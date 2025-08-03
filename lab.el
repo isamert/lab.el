@@ -1709,6 +1709,11 @@ MR is an object created by `lab--parse-merge-request-url'."
    (lambda (ov) (overlay-get ov 'lab-comment))
    (overlays-at (point))))
 
+(defun lab--thread-overlay-at-point ()
+  (seq-find
+   (lambda (ov) (overlay-get ov 'lab-thread))
+   (overlays-at (point))))
+
 (defun lab--mark-comment-region (ov)
   (goto-char (overlay-get ov 'lab-comment-beginning))
   (set-mark-command nil)
@@ -1928,8 +1933,9 @@ This function assumes you are currently on a hunk header."
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c o") #'lab-open-merge-request-on-web)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-delete-comment)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c D") #'lab-delete-all-comments)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-thread-dwim)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c x") #'lab-delete-comment)
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c X") #'lab-delete-all-comments)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c f") #'lab-forward-merge-request-thread)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c b") #'lab-backward-merge-request-thread)
@@ -2064,6 +2070,26 @@ In this buffer you can use the following functions:
            (when on-accept
              (funcall on-accept ov))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
+
+(defun lab-reply-thread (ov)
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (error "TODO..."))
+
+(defun lab-thread-dwim ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let ((thread (lab--thread-overlay-at-point))
+        (comment (lab--comment-overlay-at-point)))
+    (pcase (if (or thread comment)
+               (car (read-multiple-choice
+                     "Found an existing thread, what you want to do? "
+                     `((?n "new thread")
+                       ,@(when thread '((?r "reply")))
+                       ,@(when comment '((?e "edit"))))))
+             ?n)
+      (?r (lab-reply-thread thread))
+      (?e (lab-edit-comment comment))
+      ;; TODO: lab-edit-thread? But how?
+      (?n (lab-add-comment)))))
 
 (async-defun lab-send-review ()
   (interactive nil lab-merge-request-diff-mode)
