@@ -1719,22 +1719,68 @@ MR is an object created by `lab--parse-merge-request-url'."
   (dolist (ov (lab--all-threads-in-buffer))
     (delete-overlay ov)))
 
-(cl-defun lab--put-review-overlay (beg end &key (header "") content type)
-  (let* ((ov (save-excursion
+(defun lab--prefix-all-lines (prefix str)
+  (mapconcat (lambda (line) (concat prefix line))
+             (split-string str "\n" t)
+             "\n"))
+
+;; FIXME: This does not extend the background properties etc.
+(defun lab--markdown-fontify (text)
+  (with-temp-buffer
+    (insert text)
+    (when (featurep 'markdown-mode)
+      (delay-mode-hooks
+        (markdown-mode)
+        (font-lock-ensure)))
+    (buffer-string)))
+
+(defun lab--make-thread-header (username &optional created-at)
+  (concat "@" username " · " (if created-at
+                                 (lab--time-ago (date-to-time created-at))
+                               "now")))
+
+(defconst lab--spacer-length 80)
+
+(cl-defun lab--spacer (&key pre (header ""))
+  (let ((header? (not (s-blank? header))))
+    (propertize
+     (concat
+      (if pre pre "")
+      (if header? " " "")
+      header
+      (if header? " " "")
+      (make-string (- lab--spacer-length
+                      (+ (length pre)
+                         (if header?
+                             2 ; two spaces around the header
+                           0)
+                         (length header)))
+                   ?\━)
+      (if header? "\n" ""))
+     'face `(:inherit default :foreground "DimGray" :extend t))))
+
+(cl-defun lab--put-thread-overlay (beg end &key username created-at content type children)
+  (let* ((bar (propertize "┃" 'face '(:foreground "DimGray")))
+         (ov (save-excursion
                (goto-char end)
                (make-overlay beg end)))
          (text (with-temp-buffer
-                 (insert content)
-                 (delay-mode-hooks
-                   (markdown-mode)
-                   (font-lock-ensure))
-                 (lab--prefix-all-lines (propertize "┃" 'face '(:foreground "DimGray")))
-                 (goto-char (point-min))
-                 (insert "\n")
-                 (lab--spacer :header header :pre "┏")
-                 (goto-char (point-max))
-                 (insert "\n")
-                 (lab--spacer :pre "┗")
+                 (insert "\n" (lab--spacer :pre "┏" :header (lab--make-thread-header username created-at)))
+                 (insert (lab--prefix-all-lines bar (lab--markdown-fontify content)))
+                 (seq-each
+                  (lambda (child)
+                    (insert
+                     "\n"
+                     (lab--spacer
+                      :pre (concat bar "  ┏")
+                      :header (lab--make-thread-header (plist-get child :username)
+                                                       (plist-get child :created-at)))
+                     (lab--prefix-all-lines (concat bar "  " bar)
+                                            (lab--markdown-fontify (plist-get child :content)))
+                     "\n"
+                     (lab--spacer :pre (concat bar "  ┗"))))
+                  children)
+                 (insert "\n" (lab--spacer :pre "┗"))
                  (let ((char-property-alias-alist '((face font-lock-face))))
                    (font-lock-append-text-property (point-min) (point-max) 'face '(:inherit default :extend t)))
                  (buffer-string))))
@@ -1759,28 +1805,6 @@ MR is an object created by `lab--parse-merge-request-url'."
              ('thread (substitute-command-keys
                        "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve")))))))))
 
-(defconst lab--spacer-length 80)
-
-(cl-defun lab--spacer (&key pre (header ""))
-  (let ((header? (not (s-blank? header))))
-    (save-excursion
-      (insert
-       (propertize
-        (concat
-         (if pre pre "")
-         (if header? " " "")
-         header
-         (if header? " " "")
-         (make-string (- lab--spacer-length (+ (if header? 2 0) (length header))) ?\━)
-         (if header? "\n" ""))
-        'face `(:inherit default :foreground "DimGray" :extend t))))))
-
-(defun lab--prefix-all-lines (prefix)
-  (save-excursion
-    (goto-char (point-min))
-    (while (not (eobp))
-      (insert prefix)
-      (forward-line 1))))
 
 ;;;;;; Diff stuff
 
@@ -1917,8 +1941,6 @@ This function assumes you are currently on a hunk header."
 
 ;;;;; Interactive
 
-;; TODO: Add next/prev thread/comment commands (and reveal it if its folded)
-
 ;;;###autoload
 (defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
@@ -1979,11 +2001,19 @@ In this buffer you can use the following functions:
                                         .position.line_range.end)
                              (alist-get (intern (concat type  "_line"))
                                         .position)))
-                        (lab--put-review-overlay
+                        (lab--put-thread-overlay
                          (point) (pos-eol)
                          :type 'thread
-                         :header (concat "@" .author.username " · " (lab--time-ago (date-to-time .created_at)))
-                         :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))
+                         :username .author.username
+                         :created-at .created_at
+                         :children (seq-map
+                                    (lambda (it)
+                                      (let-alist it
+                                        (list :username .author.username
+                                              :created-at .created_at
+                                              :content .body)))
+                                    (seq-drop notes 1))
+                         :content .body))
                     (diff-goto-line-error (message "Skipping this diff.."))))))))
         (goto-char 0)
         (read-only-mode)
@@ -2008,9 +2038,6 @@ In this buffer you can use the following functions:
                     (forward-char -1)
                     (pos-eol))
                 (pos-eol)))
-         (info (if (use-region-p)
-                   (format "↑ %s lines ↑" (count-lines beg end))
-                 ""))
          (buffer (current-buffer)))
     (lab--user-input
      :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
@@ -2029,7 +2056,11 @@ In this buffer you can use the following functions:
                      (make-overlay beg (1+ (pos-eol))))))
            (save-excursion
              (goto-char (overlay-start ov))
-             (lab--put-review-overlay beg end :content input :type 'comment))
+             (lab--put-thread-overlay
+              beg end
+              :username "you"
+              :content input
+              :type 'comment))
            (when on-accept
              (funcall on-accept ov))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
