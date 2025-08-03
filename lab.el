@@ -1719,21 +1719,24 @@ MR is an object created by `lab--parse-merge-request-url'."
   (dolist (ov (lab--all-threads-in-buffer))
     (delete-overlay ov)))
 
-;; TODO: Remove quick-peek dependencies
 (cl-defun lab--put-review-overlay (beg end &key (header "") content type)
   (let* ((ov (save-excursion
                (goto-char end)
                (make-overlay beg end)))
          (text (with-temp-buffer
-                 (insert content "\n")
+                 (insert content)
                  (delay-mode-hooks
                    (markdown-mode)
                    (font-lock-ensure))
-                 (quick-peek--prefix-all-lines (propertize "│" 'face 'slack-block-highlight-source-overlay-face))
+                 (lab--prefix-all-lines (propertize "┃" 'face '(:foreground "DimGray")))
+                 (goto-char (point-min))
+                 (insert "\n")
+                 (lab--spacer :header header :pre "┏")
+                 (goto-char (point-max))
+                 (insert "\n")
+                 (lab--spacer :pre "┗")
                  (let ((char-property-alias-alist '((face font-lock-face))))
-                   (font-lock-append-text-property (point-min) (point-max) 'face 'quick-peek-background-face))
-                 (lab--spacer (point-min) :header header :pre "  ")
-                 (lab--spacer (point-max))
+                   (font-lock-append-text-property (point-min) (point-max) 'face '(:inherit default :extend t)))
                  (buffer-string))))
     (save-excursion
       (goto-char (overlay-start ov))
@@ -1756,22 +1759,28 @@ MR is an object created by `lab--parse-merge-request-url'."
              ('thread (substitute-command-keys
                        "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve")))))))))
 
-;; (lab-delete-all-comments)
-;; (lab--delete-all-threads)
-;; (lab--put-review-overlay (point-at-eol) (point-at-eol) :content "hahahhaahajk" :type 'thread :offset 1)
+(defconst lab--spacer-length 80)
 
-(cl-defun lab--spacer (pos &key pre header)
-  (save-excursion
-    (goto-char pos)
-    (insert (propertize "\n" 'face 'quick-peek-padding-face))
-    (let* ((color (or (face-attribute 'highlight :background) "black")))
+(cl-defun lab--spacer (&key pre (header ""))
+  (let ((header? (not (s-blank? header))))
+    (save-excursion
       (insert
-       (propertize (if pre pre "") 'face `(:background ,color :inherit quick-peek-border-face))
-       (if header
-           (propertize (concat " " header " ") 'face `(:background ,color :inherit quick-peek-background-face))
-         "")
-       (propertize "\n" 'face `(:background ,color :inherit quick-peek-border-face))))
-    (insert (propertize "\n" 'face 'quick-peek-padding-face))))
+       (propertize
+        (concat
+         (if pre pre "")
+         (if header? " " "")
+         header
+         (if header? " " "")
+         (make-string (- lab--spacer-length (+ (if header? 2 0) (length header))) ?\━)
+         (if header? "\n" ""))
+        'face `(:inherit default :foreground "DimGray" :extend t))))))
+
+(defun lab--prefix-all-lines (prefix)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (insert prefix)
+      (forward-line 1))))
 
 ;;;;;; Diff stuff
 
@@ -1892,6 +1901,7 @@ This function assumes you are currently on a hunk header."
       (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
 
 ;; TODO: Find proper bindings
+(define-key lab-merge-request-diff-mode-map (kbd "C-c c o") #'lab-open-merge-request-on-web)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-add-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-comment)
 (define-key lab-merge-request-diff-mode-map (kbd "C-c c d") #'lab-delete-comment)
@@ -1969,11 +1979,10 @@ In this buffer you can use the following functions:
                                         .position.line_range.end)
                              (alist-get (intern (concat type  "_line"))
                                         .position)))
-                        ;; TODO: Show more aesthetically pleasing threads/comments
                         (lab--put-review-overlay
-                         (point) (1+ (pos-eol))
-                         :offset 1
+                         (point) (pos-eol)
                          :type 'thread
+                         :header (concat "@" .author.username " · " (lab--time-ago (date-to-time .created_at)))
                          :content (s-join "\n\n---\n\n" (mapcar (lambda (it) (alist-get 'body it)) notes))))
                     (diff-goto-line-error (message "Skipping this diff.."))))))))
         (goto-char 0)
