@@ -1090,9 +1090,11 @@ Example:
    (lambda (resolve reject)
      (apply
       #'lab--request
-      :%success (lambda (data) (funcall resolve data))
-      :%reject (lambda (data) (funcall reject data))
-      params))))
+      (append
+       params
+       (list
+        :%success (lambda (data) (funcall resolve data))
+        :%error (lambda (data) (funcall reject data))))))))
 
 (defun lab--open-web-url (url)
   (kill-new url)
