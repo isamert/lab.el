@@ -2123,11 +2123,14 @@ In this buffer you can use the following functions:
                                      ,@(when (or (s-prefix? "-" line) unchanged-line?)
                                          `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
               (let-alist lab--merge-request
-                (when (await (lab--request-promise
-                              (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                              :%type "POST"
-                              :%headers '(("Content-Type" . "application/json"))
-                              :%data (json-encode data)))
+                (when (condition-case reason
+                          (await (lab--request-promise
+                                  (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                                  :%type "POST"
+                                  :%headers '(("Content-Type" . "application/json"))
+                                  :%data (json-encode data)))
+                        (error (message "lab :: Failed to send thread: %s. You can retry submitting" reason)
+                               nil))
                   (overlay-put ov 'lab-comment-sent t))))))))
     (message "lab :: Sending review... Done"))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
