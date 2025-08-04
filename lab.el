@@ -1696,31 +1696,42 @@ MR is an object created by `lab--parse-merge-request-url'."
 ;;;;; Utils
 ;;;;;; Overlays
 
+(cl-defstruct (lab--thread (:constructor lab--make-thread)
+                                (:copier nil))
+  (type nil :type '(member 'thread 'comment))
+  (content nil :type 'string)
+  (beginning nil :type 'number)
+  (end nil :type 'number)
+  (username nil :type 'string)
+  (created-at nil :type 'string)
+  (children nil :type 'lab--thread))
+
+(defun lab--thread-overlay? (ov)
+  (when-let* ((x (overlay-get ov 'lab-info)))
+    (eq 'thread (lab--thread-type x))))
+
+(defun lab--comment-overlay? (ov)
+  (when-let* ((x (overlay-get ov 'lab-info)))
+    (eq 'comment (lab--thread-type x))))
+
 (defun lab--all-comments-in-buffer ()
-  (seq-filter
-   (lambda (ov) (overlay-get ov 'lab-comment))
-   (overlays-in (point-min) (point-max))))
+  (seq-filter #'lab--comment-overlay? (overlays-in (point-min) (point-max))))
 
 (defun lab--all-threads-in-buffer ()
-  (seq-filter
-   (lambda (ov) (overlay-get ov 'lab-thread))
-   (overlays-in (point-min) (point-max))))
+  (seq-filter #'lab--thread-overlay? (overlays-in (point-min) (point-max))))
 
 (defun lab--comment-overlay-at-point ()
-  (seq-find
-   (lambda (ov) (overlay-get ov 'lab-comment))
-   (overlays-at (point))))
+  (seq-find #'lab--comment-overlay? (overlays-at (point))))
 
 (defun lab--thread-overlay-at-point ()
-  (seq-find
-   (lambda (ov) (overlay-get ov 'lab-thread))
-   (overlays-at (point))))
+  (seq-find #'lab--thread-overlay? (overlays-at (point))))
 
 (defun lab--mark-comment-region (ov)
-  (goto-char (overlay-get ov 'lab-comment-beginning))
-  (set-mark-command nil)
-  (goto-char (overlay-get ov 'lab-comment-end))
-  (exchange-point-and-mark))
+  (let ((thread (overlay-get ov 'lab-info)))
+    (goto-char (lab--thread-beginning thread))
+    (set-mark-command nil)
+    (goto-char (lab--thread-end thread))
+    (exchange-point-and-mark)))
 
 (defun lab--delete-all-threads ()
   (dolist (ov (lab--all-threads-in-buffer))
@@ -1741,10 +1752,12 @@ MR is an object created by `lab--parse-merge-request-url'."
         (font-lock-ensure)))
     (buffer-string)))
 
-(defun lab--make-thread-header (username &optional created-at)
-  (concat "@" username " · " (if created-at
-                                 (lab--time-ago (date-to-time created-at))
-                               "now")))
+(defun lab--make-thread-header (thread)
+  (concat "@" (lab--thread-username thread)
+          " · "
+          (if-let* ((created-at (lab--thread-created-at thread)))
+              (lab--time-ago (date-to-time created-at))
+            "now")))
 
 (defconst lab--spacer-length 80)
 
@@ -1766,40 +1779,35 @@ MR is an object created by `lab--parse-merge-request-url'."
       (if header? "\n" ""))
      'face `(:inherit default :foreground "DimGray" :extend t))))
 
-(cl-defun lab--put-thread-overlay (beg end &key username created-at content type children)
+(cl-defun lab--put-thread-overlay (thread)
   (let* ((bar (propertize "┃" 'face '(:foreground "DimGray")))
+         (beg (lab--thread-beginning thread))
+         (end (lab--thread-end thread))
          (ov (save-excursion
                (goto-char end)
                (make-overlay beg end)))
          (text (with-temp-buffer
-                 (insert "\n" (lab--spacer :pre "┏" :header (lab--make-thread-header username created-at)))
-                 (insert (lab--prefix-all-lines bar (lab--markdown-fontify content)))
+                 (insert "\n" (lab--spacer :pre "┏" :header (lab--make-thread-header thread)))
+                 (insert (lab--prefix-all-lines bar (lab--markdown-fontify (lab--thread-content thread))))
                  (seq-each
                   (lambda (child)
                     (insert
                      "\n"
                      (lab--spacer
                       :pre (concat bar "  ┏")
-                      :header (lab--make-thread-header (plist-get child :username)
-                                                       (plist-get child :created-at)))
+                      :header (lab--make-thread-header child))
                      (lab--prefix-all-lines (concat bar "  " bar)
-                                            (lab--markdown-fontify (plist-get child :content)))
+                                            (lab--markdown-fontify (lab--thread-content child)))
                      "\n"
                      (lab--spacer :pre (concat bar "  ┗"))))
-                  children)
+                  (lab--thread-children thread))
                  (insert "\n" (lab--spacer :pre "┗"))
                  (let ((char-property-alias-alist '((face font-lock-face))))
                    (font-lock-append-text-property (point-min) (point-max) 'face '(:inherit default :extend t)))
                  (buffer-string))))
     (save-excursion
       (goto-char (overlay-start ov))
-      (when (eq type 'comment)
-        (overlay-put ov 'lab-comment t))
-      (when (eq type 'thread)
-        (overlay-put ov 'lab-thread t))
-      (overlay-put ov 'lab-comment-input content)
-      (overlay-put ov 'lab-comment-beginning beg)
-      (overlay-put ov 'lab-comment-end end)
+      (overlay-put ov 'lab-info thread)
       (overlay-put ov 'after-string text)
       (overlay-put
        ov 'kbd-help
@@ -1810,7 +1818,8 @@ MR is an object created by `lab--parse-merge-request-url'."
                         "\\[lab-edit-comment] → Edit, \\[lab-delete-comment] → Remove"))
              ;; TODO: Resolve/reopen according to it's status
              ('thread (substitute-command-keys
-                       "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve")))))))))
+                       "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve")))))))
+    ov))
 
 
 ;;;;;; Diff stuff
@@ -2010,18 +2019,18 @@ In this buffer you can use the following functions:
                              (alist-get (intern (concat type  "_line"))
                                         .position)))
                         (lab--put-thread-overlay
-                         (point) (pos-eol)
-                         :type 'thread
-                         :username .author.username
-                         :created-at .created_at
-                         :children (seq-map
-                                    (lambda (it)
-                                      (let-alist it
-                                        (list :username .author.username
-                                              :created-at .created_at
-                                              :content .body)))
-                                    (seq-drop notes 1))
-                         :content .body))
+                         (lab--make-thread
+                          :type 'thread
+                          :beginning (point) :end (pos-eol)
+                          :username .author.username :created-at .created_at
+                          :content .body
+                          :children (seq-map (lambda (it)
+                                               (let-alist it
+                                                 (lab--make-thread
+                                                  :username .author.username
+                                                  :created-at .created_at
+                                                  :content .body)))
+                                             (seq-drop notes 1)))))
                     (diff-goto-line-error (message "Skipping this diff.."))))))))
         (goto-char 0)
         (read-only-mode)
@@ -2032,8 +2041,9 @@ In this buffer you can use the following functions:
         (setq-local lab--merge-request-threads threads)
         (setq-local lab--merge-request-diffs diffs)))))
 
-(cl-defun lab-add-comment (&key (init "") on-accept)
-  (interactive nil lab-merge-request-diff-mode)
+(defun lab--read-comment (init on-accept)
+  "Get comment from user.
+ON-ACCEPT should return the created overlay."
   (let* ((oldwin (current-window-configuration))
          (beg (if (use-region-p)
                   (save-excursion
@@ -2059,23 +2069,75 @@ In this buffer you can use the following functions:
        (set-window-configuration oldwin)
        (with-current-buffer buffer
          (deactivate-mark)
-         (let ((ov (save-excursion
-                     (goto-char end)
-                     (make-overlay beg (1+ (pos-eol))))))
-           (save-excursion
-             (goto-char (overlay-start ov))
-             (lab--put-thread-overlay
-              beg end
-              :username "you"
-              :content input
-              :type 'comment))
-           (when on-accept
-             (funcall on-accept ov))
+         (let ((ov (funcall on-accept beg end input)))
            (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
 
+(cl-defun lab-add-comment (&key (init "") on-accept)
+  (interactive nil lab-merge-request-diff-mode)
+  (lab--read-comment
+   "" (lambda (beg end input)
+        (let ((ov (save-excursion
+                    (goto-char end)
+                    (make-overlay beg (1+ (pos-eol))))))
+          (save-excursion
+            (goto-char (overlay-start ov))
+            (lab--put-thread-overlay
+             (lab--make-thread
+              :type 'comment
+              :beginning beg :end end
+              :username "<you>"
+              :content input)))))))
+
 (defun lab-reply-thread (ov)
+  (interactive (list (lab--thread-overlay-at-point)) lab-merge-request-diff-mode)
+  (when-let* ((thread-ov ov)
+              (thread (overlay-get thread-ov 'lab-info)))
+    (lab--mark-comment-region thread-ov)
+    (lab--read-comment
+     (concat
+      (seq-reduce
+       (lambda (acc it)
+         (concat
+          acc "\n\n"
+          (lab--spacer :pre "━━━━━" :header (lab--make-thread-header it))
+          (lab--thread-content it)))
+       (append (list thread) (lab--thread-children thread))
+       "<!-- *THESE COMMENT LINES WILL BE IGNORED*")
+      "\n-->\n")
+     (lambda (beg end input)
+       (lab-delete-comment ov)
+       (setf (lab--thread-children thread)
+             (append (lab--thread-children thread)
+                     (list (lab--make-thread
+                            :username "<you>"
+                            :content (s-trim (replace-regexp-in-string "<!--\\(.\\|\n\\)*?-->" "" input))))))
+       (save-excursion (lab--put-thread-overlay thread))))))
+
+(defun lab-edit-comment (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
-  (error "TODO..."))
+  (when ov
+    (lab--mark-comment-region ov)
+    (lab-add-comment
+     :init (lab--thread-content (overlay-get ov 'lab-info))
+     :on-accept
+     (lambda (_ov)
+       (lab-delete-comment ov)))))
+
+(defun lab-delete-comment (ov)
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when ov
+    (delete-overlay ov)
+    (message "lab :: Comment removed")
+    (seq-each (lambda (hook) (funcall hook ov)) lab-delete-comment-hook)))
+
+(defun lab-delete-all-comments ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let ((i 0))
+    (dolist (ov (lab--all-comments-in-buffer))
+      (lab-delete-comment ov)
+      (setq i (1+ i)))
+    (when (> i 0)
+      (message "lab :: %s comment(s) removed" i))))
 
 (defun lab-thread-dwim ()
   (interactive nil lab-merge-request-diff-mode)
@@ -2101,8 +2163,8 @@ In this buffer you can use the following functions:
       (unless (overlay-get ov 'lab-comment-sent)
         (let (;; TODO: Using lab-comment-end here because we do not
               ;; support ranges right now
-              (pt (prog1 (overlay-get ov 'lab-comment-end)
-                    (goto-char (overlay-get ov 'lab-comment-end)))))
+              (pt (progn (goto-char (lab--thread-end (overlay-get ov 'lab-info)))
+                         (point))))
           (save-excursion
             (goto-char pt)
             (let* ((line (thing-at-point 'line))
@@ -2110,7 +2172,7 @@ In this buffer you can use the following functions:
                    (diff (get-text-property (point) 'lab-diff))
                    (data
                     (let-alist (car lab--merge-request-versions) ; last version
-                      `((body . ,(overlay-get ov 'lab-comment-input))
+                      `((body . ,(lab--thread-content (overlay-get ov 'lab-info)))
                         (position . ((base_sha . ,.base_commit_sha)
                                      (start_sha . ,.start_commit_sha)
                                      (head_sha . ,.head_commit_sha)
@@ -2135,32 +2197,6 @@ In this buffer you can use the following functions:
     (message "lab :: Sending review... Done"))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
-(defun lab-edit-comment (ov)
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
-  (when ov
-    (lab--mark-comment-region ov)
-    (lab-add-comment
-     :init (overlay-get ov 'lab-comment-input)
-     :on-accept
-     (lambda (_ov)
-       (lab-delete-comment ov)))))
-
-(defun lab-delete-comment (ov)
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
-  (when ov
-    (delete-overlay ov)
-    (message "lab :: Comment removed")
-    (seq-each (lambda (hook) (funcall hook ov)) lab-delete-comment-hook)))
-
-(defun lab-delete-all-comments ()
-  (interactive nil lab-merge-request-diff-mode)
-  (let ((i 0))
-    (dolist (ov (lab--all-comments-in-buffer))
-      (lab-delete-comment ov)
-      (setq i (1+ i)))
-    (when (> i 0)
-      (message "lab :: %s comment(s) removed" i))))
-
 (defun lab-open-merge-request-on-web ()
   (interactive nil lab-merge-request-diff-mode)
   (browse-url lab--merge-request-url))
@@ -2168,9 +2204,7 @@ In this buffer you can use the following functions:
 (defun lab-forward-merge-request-thread ()
   (interactive nil lab-merge-request-diff-mode)
   (let* ((ovs (seq-filter
-               (lambda (ov)
-                 (or (overlay-get ov 'lab-thread)
-                     (overlay-get ov 'lab-comment)))
+               (lambda (ov) (overlay-get ov 'lab-info))
                (overlays-in (point) (point-max))))
          (next (seq-find (lambda (ov) (> (overlay-start ov) (point))) ovs)))
     (if next
@@ -2183,9 +2217,7 @@ In this buffer you can use the following functions:
   (interactive nil lab-merge-request-diff-mode)
   (let* ((ovs (reverse
                (seq-filter
-                (lambda (ov)
-                  (or (overlay-get ov 'lab-thread)
-                      (overlay-get ov 'lab-comment)))
+                (lambda (ov) (overlay-get ov 'lab-info))
                 (overlays-in (point-min) (point)))))
          (prev (seq-find (lambda (ov) (< (overlay-start ov) (point))) ovs)))
     (if prev
@@ -2233,7 +2265,6 @@ or if you want to see information that is not exposed in the merge
 request diff interface."
   (interactive nil lab-merge-request-diff-mode)
   (lab--inspect-obj lab--merge-request-diffs))
-
 
 ;;;; Merge request overview
 
