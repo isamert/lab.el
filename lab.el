@@ -1381,21 +1381,23 @@ enter additional environment variables interactively."
 (cl-defun lab-trigger-pipeline (&key project-id ref variables)
   "Trigger a new pipeline for PROJECT-ID using the branch/tag name REF.
 
-  Same thing as `lab-trigger-pipeline-manually' but for programmatic use
-  only.
+Same thing as `lab-trigger-pipeline-manually' but for programmatic use
+only.
 
-  If PROJECT-ID is nil, then use current project.
+If PROJECT-ID is nil, then use current project.
 
-  VARIABLES is an alist, like:
+VARIABLES is an alist, like:
 
-  \\='((\"SOME_VAR\" . \"true\"))"
+\\='((\"SOME_VAR\" . \"true\"))"
   (lab--request (format "projects/%s/pipeline" (or project-id "#{project}"))
-                :ref ref
                 :%type "POST"
-                :%data (json-encode `((variables
+                :%headers '(("Content-Type" . "application/json"))
+                :%data (json-encode `((ref . ,ref)
+                                      (variables
                                        .
                                        ,(seq-map (pcase-lambda (`(,key . ,val))
                                                    `((key . ,key)
+                                                     (variable_type . "env_var")
                                                      (value . ,(format "%s" val))))
                                                  variables))))))
 
