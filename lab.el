@@ -1116,6 +1116,10 @@ Example:
   (kill-new url)
   (funcall lab-browse-url-fn url))
 
+(defun lab-user ()
+  "Get the currently authenticated user."
+  (lab--request "user"))
+
 ;;;; Projects:
 
 (lab--define-actions-for project
@@ -1712,16 +1716,17 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
 MR is an object created by `lab--parse-merge-request-url'."
   (let-alist mr (format "%s!%s" (url-unhex-string .project_id) .iid)))
 
-;;;; Code review stuff
+;;;; Code review stuff (merge requests)
 
 ;;;;; Utils
 
-;;;;;; Overlays
+;;;;;; Overlays & comments utility
 
 (cl-defstruct (lab--comment (:constructor lab--make-comment)
                             (:copier nil))
   (status nil :type '(member 'new 'sent 'other))
   (placement nil :type '(member 'top-level 'reply))
+  (id nil :type 'string)
   (thread-id nil :type 'string)
   (content nil :type 'string)
   (beginning nil :type 'number)
@@ -1751,12 +1756,6 @@ MR is an object created by `lab--parse-merge-request-url'."
 (defun lab--comment-at-point ()
   (overlay-get 'lab-comment (seq-find #'lab--comment-overlay? (overlays-at (point)))))
 
-(defun lab--mark-comment-region (comment)
-  (goto-char (lab--comment-beginning comment))
-  (set-mark-command nil)
-  (goto-char (lab--comment-end comment))
-  (exchange-point-and-mark))
-
 (defun lab--prefix-all-lines (prefix str)
   (mapconcat (lambda (line) (concat prefix line))
              (split-string str "\n" t)
@@ -1780,12 +1779,13 @@ MR is an object created by `lab--parse-merge-request-url'."
           (if-let* ((created-at (lab--comment-created-at comment)))
               (lab--time-ago (date-to-time created-at))
             "now")
-          (if-let* ((resolved-by (lab--comment-resolved-by comment))
-                    (resolved-at (lab--comment-resolved-at comment)))
+          (if-let* ((resolved-by (lab--comment-resolved-by comment)))
               (format " · %s by @%s (%s)"
                       (propertize "✅" 'face '(:foreground "green4" :weight bol))
                       resolved-by
-                      (lab--time-ago (date-to-time resolved-at)))
+                      (if-let* ((resolved-at (lab--comment-resolved-at comment)))
+                          (lab--time-ago (date-to-time resolved-at))
+                        "now"))
             "")))
 
 (cl-defun lab--spacer (&key pre (header ""))
@@ -1849,6 +1849,24 @@ MR is an object created by `lab--parse-merge-request-url'."
       ;;                  "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve"))))))
       )
     ov))
+
+(defun lab--select-from-thread (comment)
+  (let* ((all-comments (seq-filter
+                        (lambda (it) (or
+                                 (eq (lab--comment-status it) 'new)
+                                 (equal (im-tap (lab--comment-username it)) lab--current-user)))
+                        (cons comment (lab--comment-children comment)))))
+    (if (length= all-comments 1)
+        (car all-comments)
+      (lab--completing-read-object
+       "Select comment: " all-comments
+       :sort? nil
+       :formatter (lambda (it)
+                    (format "%s :: %s"
+                            (propertize (lab--make-comment-header it)
+                                        'face '(:foreground "SkyBlue" :weight bold))
+                            (propertize (s-truncate 50 (lab--comment-content it))
+                                        'face '(:foreground "LightGray" :weight italic))))))))
 
 ;;;;;; Diff stuff
 
@@ -1957,6 +1975,7 @@ This function assumes you are currently on a hunk header."
 (defvar-local lab--merge-request-diffs nil)
 (defvar-local lab--pending-comment-count 0)
 (defvar-local lab--sent-comment-count 0)
+(defvar-local lab--current-user nil)
 (defvar lab-merge-request-history nil)
 
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
@@ -1985,6 +2004,7 @@ This function assumes you are currently on a hunk header."
 
 ;;;;; Interactive
 
+;; TODO: Convert this to async-defun
 ;;;###autoload
 (defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
@@ -2013,7 +2033,10 @@ In this buffer you can use the following functions:
          (versions
           (let-alist mr
             (lab--request
-             (format "projects/%s/merge_requests/%s/versions" .project_id .iid)))))
+             (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
+         ;; Current user is needed to determine which comments are editable/deletable by us
+         ;; Caching this into a local var so we don't need to request it everytime
+         (current-user (alist-get 'username (lab-user))))
     (let ((inhibit-read-only t)
           (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
@@ -2048,6 +2071,7 @@ In this buffer you can use the following functions:
                          (lab--make-comment
                           :status 'other
                           :placement 'top-level
+                          :id .id
                           :thread-id (alist-get 'id thread)
                           :beginning (point) :end (pos-eol)
                           :username .author.username :created-at .created_at
@@ -2059,10 +2083,14 @@ In this buffer you can use the following functions:
                                                  (lab--make-comment
                                                   :status 'other
                                                   :placement 'reply
+                                                  :id .id
                                                   :thread-id (alist-get 'id thread)
+                                                  :beginning (point) :end (pos-eol)
                                                   :username .author.username
                                                   :created-at .created_at
-                                                  :content .body)))
+                                                  :content .body
+                                                  :resolved-by .resolved_by.username
+                                                  :resolved-at .resolved_at)))
                                              (seq-drop notes 1)))))
                     (diff-goto-line-error (message "Skipping this diff..."))))))))
         (goto-char 0)
@@ -2072,7 +2100,8 @@ In this buffer you can use the following functions:
         (setq-local lab--merge-request-url url)
         (setq-local lab--merge-request mr)
         (setq-local lab--merge-request-threads threads)
-        (setq-local lab--merge-request-diffs diffs)))))
+        (setq-local lab--merge-request-diffs diffs)
+        (setq-local lab--current-user current-user)))))
 
 (defun lab--put-comment (init on-accept)
   "Get comment from user.
@@ -2121,7 +2150,6 @@ ON-ACCEPT should return the created overlay."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((ov ov)
               (comment (overlay-get ov 'lab-comment)))
-    (lab--mark-comment-region comment)
     (lab--put-comment
      (concat
       (seq-reduce
@@ -2152,44 +2180,133 @@ ON-ACCEPT should return the created overlay."
 (defun lab-edit-thread (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
-    (let ((comment (overlay-get ov 'lab-comment)))
-      ;; TODO: Handle if there is a child with status new
-      (pcase (lab--comment-status comment)
-        ('new (lab--mark-comment-region comment)
-              (lab--put-comment
-               (lab--comment-content comment)
-               (lambda (_beg _end input)
-                 (lab-delete-thread ov)
-                 (setf (lab--comment-content comment) input)
-                 (lab--put-comment-overlay comment))))
-        (_ (error "Not implemented"))))))
+    (let* ((comment (overlay-get ov 'lab-comment))
+           (selected (lab--select-from-thread comment))
+           (status (lab--comment-status selected)))
+      (pcase status
+        ('new
+         (lab--put-comment
+          (lab--comment-content selected)
+          (lambda (_beg _end input)
+            (delete-overlay ov)
+            (setf (lab--comment-content selected) input)
+            (lab--put-comment-overlay comment))))
+        ('other
+         (lab--put-comment
+          (lab--comment-content selected)
+          (lambda (_beg _end input)
+            (let-alist lab--merge-request
+              (message "lab :: Editing...")
+              (lab--request
+               (format "projects/%s/merge_requests/%s/discussions/%s/notes/%s"
+                       .project_id .iid (lab--comment-thread-id selected) (lab--comment-id selected))
+               :%type "PUT"
+               :body input
+               :%success (lambda (_data)
+                           (setf (lab--comment-content selected) input)
+                           (message "lab :: Editing...Done")
+                           (delete-overlay ov)
+                           (lab--put-comment-overlay comment))
+               :%error (lambda (err)
+                         (message "lab :: Failed to edit thread: %s" err)))))))))))
 
 (defun lab-delete-thread (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
-  (let ((i 0))
-    (when-let* ((_ ov)
-                (comment (overlay-get ov 'lab-comment)))
-      (pcase (lab--comment-status comment)
-        ;; FIXME: If user added replies to this comment, ask if they
-        ;; want to remove all or which one
-        ('new (delete-overlay ov)
-              (setq i (1+ i)))
-        ;; FIXME: This deletes all new comments made by the user from
-        ;; the comment, maybe ask which one to delete if n > 1
-        ('other (cl-loop
-                 for child in (lab--comment-children comment)
-                 do (pcase (lab--comment-status child)
-                      ('new
-                       (setf (lab--comment-children comment)
-                             (cl-remove child (lab--comment-children comment) :test #'equal))
-                       (setq i (1+ i)))
-                      (_ t)))
-                (delete-overlay ov)
-                (lab--put-comment-overlay comment)))
-      (seq-each (lambda (hook) (funcall hook ov)) lab-delete-thread-hook)
-      (when (and (called-interactively-p 'interactive) (> i 0))
-        (message "lab :: Deleted"))
-      i)))
+  (when ov
+    (let* ((comment (overlay-get ov 'lab-comment))
+           (selected (lab--select-from-thread comment))
+           (status (lab--comment-status selected))
+           (placement (lab--comment-placement selected)))
+      (when (y-or-n-p "Are you sure you want to delete this comment? ")
+        (pcase (list status placement)
+          ('(new reply)
+           (delete-overlay ov)
+           (setf (lab--comment-children comment)
+                 (seq-remove
+                  (lambda (it) (equal it selected))
+                  (lab--comment-children comment)))
+           (lab--put-comment-overlay comment))
+          ('(new top-level)
+           (delete-overlay ov))
+          ((or '(other reply)
+               '(other top-level))
+           (let-alist lab--merge-request
+             (message "lab :: Deleting...")
+             (lab--request
+              (format "projects/%s/merge_requests/%s/discussions/%s/notes/%s"
+                      .project_id .iid (lab--comment-thread-id selected) (lab--comment-id selected))
+              :%type "DELETE"
+              :%success (lambda (_data)
+                          (message "lab :: Deleting...Done")
+                          (delete-overlay ov)
+                          ;; When you delete a top level comment from
+                          ;; UI, the next comment becomes the first
+                          ;; comment. But when deleted from the API,
+                          ;; the whole thread goes away. The following
+                          ;; implements the behavior of the UI but
+                          ;; disabled due to behavior of the API.
+
+                          ;; (let ((children (lab--comment-children comment)))
+                          ;;   (setf (lab--comment-children comment)
+                          ;;         (seq-remove (lambda (it) (equal it selected))
+                          ;;                     (lab--comment-children comment)))
+                          ;;   (cond
+                          ;;    ((and (length> children 0)
+                          ;;          (equal selected comment))
+                          ;;     (let ((new-parent (seq-first children)))
+                          ;;       (setf (lab--comment-children new-parent) (seq-drop children 1))
+                          ;;       (lab--put-comment-overlay new-parent)))
+                          ;;    ((not (equal selected comment))
+                          ;;     (lab--put-comment-overlay comment)))
+                          ;;   (message "lab :: Deleted the comment"))
+                          )
+              :%error (lambda (err)
+                        (message "lab :: Failed to delete the comment: %s" err))))))
+        (lab-merge-request-diff-mode-update-header)))))
+
+(defun lab-resolve-thread (ov)
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when-let* ((_ ov)
+              (comment (overlay-get ov 'lab-comment)))
+    (pcase (lab--comment-status comment)
+      ('new (error "You need to send this comment first"))
+      ('other (let-alist lab--merge-request
+                (lab--request
+                 (format "projects/%s/merge_requests/%s/discussions/%s"
+                         .project_id .iid (lab--comment-thread-id comment))
+                 :resolved "true"
+                 :%type "PUT"
+                 :%success (lambda (_)
+                             (message "lab :: Resolved the thread")
+                             (setf (lab--comment-resolved-by comment) "<you>")
+                             (setf (lab--comment-resolved-at comment) nil)
+                             (delete-overlay ov)
+                             (lab--put-comment-overlay comment))
+                 :%error (lambda (data)
+                           (message "lab :: Failed to resolve the thread due to %s" data)))))
+      (_ (error "Not implemented")))))
+
+(defun lab-unresolve-thread (ov)
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when-let* ((_ ov)
+              (comment (overlay-get ov 'lab-comment)))
+    (pcase (lab--comment-status comment)
+      ('new (error "You need to send this comment first"))
+      ('other (let-alist lab--merge-request
+                (lab--request
+                 (format "projects/%s/merge_requests/%s/discussions/%s"
+                         .project_id .iid (lab--comment-thread-id comment))
+                 :resolved "false"
+                 :%type "PUT"
+                 :%success (lambda (_)
+                             (message "lab :: Reopened the thread")
+                             (setf (lab--comment-resolved-by comment) nil)
+                             (setf (lab--comment-resolved-at comment) nil)
+                             (delete-overlay ov)
+                             (lab--put-comment-overlay comment))
+                 :%error (lambda (data)
+                           (message "lab :: Failed to reopen the thread due to %s" data)))))
+      (_ (error "Not implemented")))))
 
 (defun lab--make-new-thread (comment)
   (let* ((pt (progn
@@ -2217,10 +2334,10 @@ ON-ACCEPT should return the created overlay."
                                `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
     (let-alist lab--merge-request
       (cons comment (list
-                    (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                    :%type "POST"
-                    :%headers '(("Content-Type" . "application/json"))
-                    :%data (json-encode data))))))
+                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                     :%type "POST"
+                     :%headers '(("Content-Type" . "application/json"))
+                     :%data (json-encode data))))))
 
 (defun lab--make-new-thread-reply (comment)
   (let-alist lab--merge-request
