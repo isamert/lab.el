@@ -244,6 +244,21 @@ thread, you can do the following:
   :group 'lab
   :type 'hook)
 
+(defcustom lab-merge-request-diff-autofill-comments t
+  "Non-nil means automatically autofill comments in merge request diffs.
+When enabled, comments in diffs of merge requests are automatically
+wrapped at `fill-column' while displaying.  This prevents awkward
+formatting in very long comments."
+  :type 'boolean
+  :group 'lab)
+
+(defcustom lab-merge-request-diff-spacer-length (+ 7 fill-column)
+  "The length of the spacer used in the lab merge request diff.
+This value determines how many characters wide the spacer is in the
+diff display."
+  :type 'number
+  :group 'lab)
+
 ;;;; Internal variables/constants:
 
 (defvar lab--inspect-buffer-name "*lab inspect*"
@@ -1713,6 +1728,8 @@ MR is an object created by `lab--parse-merge-request-url'."
   (end nil :type 'number)
   (username nil :type 'string)
   (created-at nil :type 'string)
+  (resolved-by nil :type 'string)
+  (resolved-at nil :type 'string)
   (children nil :type '(list lab--comment)))
 
 (defun lab--comment-overlay? (ov)
@@ -1752,7 +1769,9 @@ MR is an object created by `lab--parse-merge-request-url'."
     (when (featurep 'markdown-mode)
       (delay-mode-hooks
         (markdown-mode)
-        (font-lock-ensure)))
+        (font-lock-ensure)
+        (when lab-merge-request-diff-autofill-comments
+          (fill-region (point-min) (point-max)))))
     (buffer-string)))
 
 (defun lab--make-comment-header (comment)
@@ -1760,27 +1779,32 @@ MR is an object created by `lab--parse-merge-request-url'."
           " · "
           (if-let* ((created-at (lab--comment-created-at comment)))
               (lab--time-ago (date-to-time created-at))
-            "now")))
-
-(defconst lab--spacer-length 80)
+            "now")
+          (if-let* ((resolved-by (lab--comment-resolved-by comment))
+                    (resolved-at (lab--comment-resolved-at comment)))
+              (format " · %s by @%s (%s)"
+                      (propertize "✅" 'face '(:foreground "green4" :weight bol))
+                      resolved-by
+                      (lab--time-ago (date-to-time resolved-at)))
+            "")))
 
 (cl-defun lab--spacer (&key pre (header ""))
   (let ((header? (not (s-blank? header))))
-    (propertize
-     (concat
-      (if pre pre "")
-      (if header? " " "")
-      header
-      (if header? " " "")
-      (make-string (- lab--spacer-length
-                      (+ (length pre)
-                         (if header?
-                             2 ; two spaces around the header
-                           0)
-                         (length header)))
-                   ?\━)
-      (if header? "\n" ""))
-     'face `(:inherit default :foreground "DimGray" :extend t))))
+    ;; propertize
+    ;; 'face `(:inherit default :foreground "DimGray" :extend t)
+    (concat
+     (if pre pre "")
+     (if header? " " "")
+     header
+     (if header? " " "")
+     (make-string (- lab-merge-request-diff-spacer-length
+                     (+ (length pre)
+                        (if header?
+                            2 ; two spaces around the header
+                          0)
+                        (length header)))
+                  ?\━)
+     (if header? "\n" ""))))
 
 (cl-defun lab--put-comment-overlay (comment)
   (let* ((bar (propertize "┃" 'face '(:foreground "DimGray")))
@@ -1825,7 +1849,6 @@ MR is an object created by `lab--parse-merge-request-url'."
       ;;                  "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve"))))))
       )
     ov))
-
 
 ;;;;;; Diff stuff
 
@@ -2029,6 +2052,8 @@ In this buffer you can use the following functions:
                           :beginning (point) :end (pos-eol)
                           :username .author.username :created-at .created_at
                           :content .body
+                          :resolved-by .resolved_by.username
+                          :resolved-at .resolved_at
                           :children (seq-map (lambda (it)
                                                (let-alist it
                                                  (lab--make-comment
