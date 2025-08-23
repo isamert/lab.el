@@ -1389,17 +1389,19 @@ If PROJECT-ID is nil, then use current project.
 VARIABLES is an alist, like:
 
 \\='((\"SOME_VAR\" . \"true\"))"
-  (lab--request (format "projects/%s/pipeline" (or project-id "#{project}"))
-                :%type "POST"
-                :%headers '(("Content-Type" . "application/json"))
-                :%data (json-encode `((ref . ,ref)
-                                      (variables
-                                       .
-                                       ,(seq-map (pcase-lambda (`(,key . ,val))
-                                                   `((key . ,key)
-                                                     (variable_type . "env_var")
-                                                     (value . ,(format "%s" val))))
-                                                 variables))))))
+  (let ((result
+         (lab--request (format "projects/%s/pipeline" (or project-id "#{project}"))
+                       :%type "POST"
+                       :%headers '(("Content-Type" . "application/json"))
+                       :%data (json-encode `((ref . ,ref)
+                                             (variables
+                                              .
+                                              ,(seq-map (pcase-lambda (`(,key . ,val))
+                                                          `((key . ,key)
+                                                            (variable_type . "env_var")
+                                                            (value . ,(format "%s" val))))
+                                                        variables)))))))
+    (lab-watch-pipeline (alist-get 'web_url result))))
 
 ;;;; lab-trace-mode:
 
