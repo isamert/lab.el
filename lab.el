@@ -1751,7 +1751,17 @@ MR is an object created by `lab--parse-merge-request-url'."
    (lab--all-comment-overlays-in-buffer)))
 
 (defun lab--comment-overlay-at-point ()
-  (seq-find #'lab--comment-overlay? (overlays-at (point))))
+  (let ((overlays (seq-filter #'lab--comment-overlay? (overlays-at (point)))))
+    (cond
+     ((length= overlays 1)
+      (car overlays))
+     (t
+      (lab--completing-read-object
+       "Select thread: "
+       overlays
+       :sort? nil
+       :formatter (lambda (ov)
+                    (lab--thread-formatter (overlay-get ov 'lab-comment))))))))
 
 (defun lab--comment-at-point ()
   (overlay-get 'lab-comment (seq-find #'lab--comment-overlay? (overlays-at (point)))))
@@ -1861,12 +1871,14 @@ MR is an object created by `lab--parse-merge-request-url'."
       (lab--completing-read-object
        "Select comment: " all-comments
        :sort? nil
-       :formatter (lambda (it)
-                    (format "%s :: %s"
-                            (propertize (lab--make-comment-header it)
-                                        'face '(:foreground "SkyBlue" :weight bold))
-                            (propertize (s-truncate 50 (lab--comment-content it))
-                                        'face '(:foreground "LightGray" :weight italic))))))))
+       :formatter #'lab--thread-formatter))))
+
+(defun lab--thread-formatter (it)
+  (format "%s :: %s"
+          (propertize (lab--make-comment-header it)
+                      'face '(:foreground "SkyBlue" :weight bold))
+          (propertize (s-truncate 50 (lab--comment-content it))
+                      'face '(:foreground "LightGray" :weight italic))))
 
 ;;;;;; Diff stuff
 
