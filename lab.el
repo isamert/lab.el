@@ -247,8 +247,9 @@ thread, you can do the following:
 (defcustom lab-merge-request-diff-autofill-comments t
   "Non-nil means automatically autofill comments in merge request diffs.
 When enabled, comments in diffs of merge requests are automatically
-wrapped at `fill-column' while displaying.  This prevents awkward
-formatting in very long comments."
+wrapped at `lab-merge-request-diff-spacer-length' (instead of
+`fill-column') while displaying.  This prevents awkward formatting in
+very long comments."
   :type 'boolean
   :group 'lab)
 
@@ -1780,7 +1781,8 @@ MR is an object created by `lab--parse-merge-request-url'."
         (markdown-mode)
         (font-lock-ensure)
         (when lab-merge-request-diff-autofill-comments
-          (fill-region (point-min) (point-max)))))
+          (let ((fill-column lab-merge-request-diff-spacer-length))
+            (fill-region (point-min) (point-max))))))
     (buffer-string)))
 
 (defun lab--make-comment-header (comment)
