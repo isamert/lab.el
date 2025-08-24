@@ -1802,21 +1802,21 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 (cl-defun lab--spacer (&key pre (header ""))
   (let ((header? (not (s-blank? header))))
-    ;; propertize
-    ;; 'face `(:inherit default :foreground "DimGray" :extend t)
-    (concat
-     (if pre pre "")
-     (if header? " " "")
-     header
-     (if header? " " "")
-     (make-string (- lab-merge-request-diff-spacer-length
-                     (+ (length pre)
-                        (if header?
-                            2 ; two spaces around the header
-                          0)
-                        (length header)))
-                  ?\━)
-     (if header? "\n" ""))))
+    (propertize
+     (concat
+      (if pre pre "")
+      (if header? " " "")
+      header
+      (if header? " " "")
+      (make-string (- lab-merge-request-diff-spacer-length
+                      (+ (length pre)
+                         (if header?
+                             2 ; two spaces around the header
+                           0)
+                         (length header)))
+                   ?\━)
+      (if header? "\n" ""))
+     'face `(:inherit default :foreground "DimGray" :extend t))))
 
 (cl-defun lab--put-comment-overlay (comment)
   (let* ((bar (propertize "┃" 'face '(:foreground "DimGray")))
@@ -1866,7 +1866,7 @@ MR is an object created by `lab--parse-merge-request-url'."
   (let* ((all-comments (seq-filter
                         (lambda (it) (or
                                  (eq (lab--comment-status it) 'new)
-                                 (equal (im-tap (lab--comment-username it)) lab--current-user)))
+                                 (equal (lab--comment-username it) lab--current-user)))
                         (cons comment (lab--comment-children comment)))))
     (if (length= all-comments 1)
         (car all-comments)
@@ -2253,27 +2253,19 @@ ON-ACCEPT should return the created overlay."
               :%success (lambda (_data)
                           (message "lab :: Deleting...Done")
                           (delete-overlay ov)
-                          ;; When you delete a top level comment from
-                          ;; UI, the next comment becomes the first
-                          ;; comment. But when deleted from the API,
-                          ;; the whole thread goes away. The following
-                          ;; implements the behavior of the UI but
-                          ;; disabled due to behavior of the API.
-
-                          ;; (let ((children (lab--comment-children comment)))
-                          ;;   (setf (lab--comment-children comment)
-                          ;;         (seq-remove (lambda (it) (equal it selected))
-                          ;;                     (lab--comment-children comment)))
-                          ;;   (cond
-                          ;;    ((and (length> children 0)
-                          ;;          (equal selected comment))
-                          ;;     (let ((new-parent (seq-first children)))
-                          ;;       (setf (lab--comment-children new-parent) (seq-drop children 1))
-                          ;;       (lab--put-comment-overlay new-parent)))
-                          ;;    ((not (equal selected comment))
-                          ;;     (lab--put-comment-overlay comment)))
-                          ;;   (message "lab :: Deleted the comment"))
-                          )
+                          (let ((children (lab--comment-children comment)))
+                            (setf (lab--comment-children comment)
+                                  (seq-remove (lambda (it) (equal it selected))
+                                              (lab--comment-children comment)))
+                            (cond
+                             ((and (length> children 0)
+                                   (equal selected comment))
+                              (let ((new-parent (seq-first children)))
+                                (setf (lab--comment-children new-parent) (seq-drop children 1))
+                                (lab--put-comment-overlay new-parent)))
+                             ((not (equal selected comment))
+                              (lab--put-comment-overlay comment)))
+                            (message "lab :: Deleted the comment")))
               :%error (lambda (err)
                         (message "lab :: Failed to delete the comment: %s" err))))))
         (lab-merge-request-diff-mode-update-header)))))
