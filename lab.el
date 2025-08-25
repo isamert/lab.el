@@ -195,7 +195,13 @@ haven't installed consult."
 
 (defcustom lab-add-comment-hook '(lab-merge-request-diff-mode-update-header)
   "Hooks to run after adding a comment.
-Called with the comment overlay."
+Called with the comment object, `lab--comment'."
+  :group 'lab
+  :type 'hook)
+
+(defcustom lab-delete-comment-hook '(lab-merge-request-diff-mode-update-header)
+  "Hooks to run after deleting a comment.
+Called with the comment object, `lab--comment'."
   :group 'lab
   :type 'hook)
 
@@ -1764,9 +1770,6 @@ MR is an object created by `lab--parse-merge-request-url'."
        :formatter (lambda (ov)
                     (lab--thread-formatter (overlay-get ov 'lab-comment))))))))
 
-(defun lab--comment-at-point ()
-  (overlay-get 'lab-comment (seq-find #'lab--comment-overlay? (overlays-at (point)))))
-
 (defun lab--prefix-all-lines (prefix str)
   (mapconcat (lambda (line) (concat prefix line))
              (split-string str "\n" t)
@@ -2140,7 +2143,7 @@ ON-ACCEPT should return the created overlay."
        (with-current-buffer buffer
          (deactivate-mark)
          (let ((ov (funcall on-accept beg end input)))
-           (seq-each (lambda (hook) (funcall hook ov)) lab-add-comment-hook)))))))
+           (seq-each (lambda (hook) (funcall hook (overlay-get ov 'lab-comment))) lab-add-comment-hook)))))))
 
 (defun lab-new-thread ()
   (interactive nil lab-merge-request-diff-mode)
@@ -2262,7 +2265,7 @@ ON-ACCEPT should return the created overlay."
                             (message "lab :: Deleted the comment")))
               :%error (lambda (err)
                         (message "lab :: Failed to delete the comment: %s" err))))))
-        (lab-merge-request-diff-mode-update-header)))))
+        (seq-each (lambda (hook) (funcall hook comment)) lab-delete-comment-hook)))))
 
 (defun lab-resolve-thread (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
@@ -2396,7 +2399,7 @@ ON-ACCEPT should return the created overlay."
   (interactive nil lab-merge-request-diff-mode)
   (let* ((ovs (reverse
                (seq-filter
-                (lambda (ov) (overlay-get ov 'lab-comment))
+                #'lab--comment-overlay?
                 (overlays-in (point-min) (point)))))
          (prev (seq-find (lambda (ov) (< (overlay-start ov) (point))) ovs)))
     (if prev
