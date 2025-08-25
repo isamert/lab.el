@@ -1848,18 +1848,12 @@ MR is an object created by `lab--parse-merge-request-url'."
       (goto-char (overlay-start ov))
       (overlay-put ov 'lab-comment comment)
       (overlay-put ov 'after-string text)
-      ;; TODO: Rework the kbd-help thing
-      ;; (overlay-put
-      ;;  ov 'kbd-help
-      ;;  (lambda (_window _obj pos)
-      ;;    (when (< pos (1- end))
-      ;;      (pcase type
-      ;;        ('comment (substitute-command-keys
-      ;;                   "\\[lab-edit-comment] → Edit, \\[lab-delete-comment] → Remove"))
-      ;;        ;; TODO: Resolve/reopen according to it's status
-      ;;        ('comment (substitute-command-keys
-      ;;                  "\\[lab-add-comment-to-thread] → Comment, \\[lab-resolve-thread] → Resolve"))))))
-      )
+      (overlay-put
+       ov 'help-echo
+       (lambda (_window _obj pos)
+         (when (< pos (1- end))
+           (substitute-command-keys
+            "lab :: \\[lab-reply-thread] → Reply, \\[lab-edit-thread] Edit, \\[lab-delete-thread] → Delete, \\[lab-toggle-thread-resolve-status] → Toggle resolved")))))
     ov))
 
 (defun lab--select-from-thread (comment)
