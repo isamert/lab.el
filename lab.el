@@ -1977,7 +1977,7 @@ This function assumes you are currently on a hunk header."
     (setq-local lab--sent-comment-count sent)
     (setq-local header-line-format (substitute-command-keys (format "Review :: %s pending, %s sent comment(s)." pending sent)))))
 
-;;;;; Variables
+;;;;; Variables & lab-merge-request-diff-mode-map
 
 (defvar-local lab--merge-request-versions nil)
 (defvar-local lab--merge-request-threads nil)
@@ -1989,8 +1989,33 @@ This function assumes you are currently on a hunk header."
 (defvar-local lab--current-user nil)
 (defvar lab-merge-request-history nil)
 
+(defvar lab-merge-request-diff-prefix-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'lab-new-thread)
+    (define-key map (kbd "e") #'lab-edit-thread)
+    (define-key map (kbd "r") #'lab-reply-thread)
+    (define-key map (kbd "x") #'lab-delete-thread)
+    (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
+    (define-key map (kbd "RET") #'lab-send-review)
+
+    (define-key map (kbd "]") #'lab-forward-merge-request-thread)
+    (define-key map (kbd "[") #'lab-backward-merge-request-thread)
+    (put 'lab-forward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
+    (put 'lab-backward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
+
+    (define-key map (kbd "o") #'lab-open-merge-request-on-web)
+    (define-key map (kbd "im") #'lab-inspect-merge-request)
+    (define-key map (kbd "iv") #'lab-inspect-merge-request-versions)
+    (define-key map (kbd "it") #'lab-inspect-merge-request-threads)
+    (define-key map (kbd "id") #'lab-inspect-merge-request-diffs)
+
+    map))
+
+(define-key lab-merge-request-diff-mode-map (kbd "C-c ;") lab-merge-request-diff-prefix-map)
+
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
   "Mode for viewing and reviewing GitLab merge request."
+  :keymap lab-merge-request-diff-mode-map
   (setq-local
    revert-buffer-function
    (lambda (_ignore-auto noconfirm)
@@ -1998,20 +2023,6 @@ This function assumes you are currently on a hunk header."
       ((and (not noconfirm) (y-or-n-p "Your review progress will be lost.  Want to reload?"))
        (lab-open-merge-request-diff lab--merge-request-url))
       (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
-
-;; TODO: Find proper bindings
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c o") #'lab-open-merge-request-on-web)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c a") #'lab-new-thread)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c e") #'lab-edit-thread)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c x") #'lab-delete-thread)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c <RET>") #'lab-send-review)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c f") #'lab-forward-merge-request-thread)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c b") #'lab-backward-merge-request-thread)
-
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c i m") #'lab-inspect-merge-request)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c i v") #'lab-inspect-merge-request-versions)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c i t") #'lab-inspect-merge-request-threads)
-(define-key lab-merge-request-diff-mode-map (kbd "C-c c i d") #'lab-inspect-merge-request-diffs)
 
 ;;;;; Interactive
 
