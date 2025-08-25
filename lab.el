@@ -2273,7 +2273,8 @@ ON-ACCEPT should return the created overlay."
 (defun lab-resolve-thread (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((_ ov)
-              (comment (overlay-get ov 'lab-comment)))
+              (comment (overlay-get ov 'lab-comment))
+              (_ (y-or-n-p "Unresolve this thread? ")))
     (pcase (lab--comment-status comment)
       ('new (error "You need to send this comment first"))
       ('other (let-alist lab--merge-request
@@ -2295,7 +2296,8 @@ ON-ACCEPT should return the created overlay."
 (defun lab-unresolve-thread (ov)
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((_ ov)
-              (comment (overlay-get ov 'lab-comment)))
+              (comment (overlay-get ov 'lab-comment))
+              (_ (y-or-n-p "Resolve this thread? ")))
     (pcase (lab--comment-status comment)
       ('new (error "You need to send this comment first"))
       ('other (let-alist lab--merge-request
@@ -2313,6 +2315,14 @@ ON-ACCEPT should return the created overlay."
                  :%error (lambda (data)
                            (message "lab :: Failed to reopen the thread due to %s" data)))))
       (_ (error "Not implemented")))))
+
+(defun lab-toggle-thread-resolve-status (ov)
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when-let* ((_ ov)
+              (comment (overlay-get ov 'lab-comment)))
+    (if (lab--comment-resolved-by comment)
+        (lab-unresolve-thread ov)
+      (lab-resolve-thread ov))))
 
 (defun lab--make-new-thread (comment)
   (let* ((pt (progn
