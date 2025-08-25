@@ -1879,6 +1879,43 @@ MR is an object created by `lab--parse-merge-request-url'."
           (propertize (s-truncate 50 (lab--comment-content it))
                       'face '(:foreground "LightGray" :weight italic))))
 
+(declare-function outline-show-subtree "outline")
+(defun lab--reveal-thread ()
+  "Reveal jumped thread."
+  (when (bound-and-true-p outline-minor-mode)
+    (outline-show-subtree)))
+
+(defun lab--put-comment (init on-accept)
+  "Get comment from user.
+ON-ACCEPT should return the created overlay."
+  (let* ((oldwin (current-window-configuration))
+         (beg (if (use-region-p)
+                  (save-excursion
+                    (goto-char (region-beginning))
+                    (pos-bol))
+                (pos-bol)))
+         (end (if (use-region-p)
+                  (save-excursion
+                    (goto-char (region-end))
+                    (forward-char -1)
+                    (pos-eol))
+                (pos-eol)))
+         (buffer (current-buffer)))
+    (lab--user-input
+     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :parser #'buffer-string
+     :init init
+     :on-reject
+     (lambda (&rest _)
+       (set-window-configuration oldwin))
+     :on-accept
+     (lambda (_ input)
+       (set-window-configuration oldwin)
+       (with-current-buffer buffer
+         (deactivate-mark)
+         (let ((ov (funcall on-accept beg end input)))
+           (seq-each (lambda (hook) (funcall hook (overlay-get ov 'lab-comment))) lab-add-comment-hook)))))))
+
 ;;;;;; Diff stuff
 
 (defun lab--diff-find-line-number-at (pos &optional old?)
@@ -1966,9 +2003,53 @@ This function assumes you are currently on a hunk header."
      "+++ " (if .deleted_file "/dev/null" (concat "b/" .new_path)) "\n"
      (or .diff ""))))
 
+;;;;;; Request stuff
+
+(defun lab--make-new-thread (comment)
+  (let* ((pt (progn
+               ;; TODO: Using "end" here because we do not support
+               ;; ranges right now.
+               (goto-char (lab--comment-end comment))
+               (point)))
+         (line (thing-at-point 'line))
+         (unchanged-line? (s-matches? "^ " line))
+         ;; TODO: maybe also put lab-diff thing into the comment object
+         (diff (get-text-property (point) 'lab-diff))
+         (data
+          (let-alist (car lab--merge-request-versions) ; last version
+            `((body . ,(lab--comment-content comment))
+              (position . ((base_sha . ,.base_commit_sha)
+                           (start_sha . ,.start_commit_sha)
+                           (head_sha . ,.head_commit_sha)
+                           (position_type . "text")
+                           (old_path . ,(alist-get 'old_path diff))
+                           (new_path . ,(alist-get 'new_path diff))
+                           ;; (line_range . "TODO")
+                           ,@(when (or (s-prefix? "+" line) unchanged-line?)
+                               `((new_line . ,(lab--diff-find-line-number-at pt))))
+                           ,@(when (or (s-prefix? "-" line) unchanged-line?)
+                               `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
+    (let-alist lab--merge-request
+      (cons comment (list
+                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                     :%type "POST"
+                     :%headers '(("Content-Type" . "application/json"))
+                     :%data (json-encode data))))))
+
+(defun lab--make-new-thread-reply (comment)
+  (let-alist lab--merge-request
+    (cons comment (list
+                   (format "projects/%s/merge_requests/%s/discussions/%s/notes"
+                           .project_id .iid (lab--comment-thread-id comment))
+                   :%type "POST"
+                   :%headers '(("Content-Type" . "application/json"))
+                   :%data (json-encode
+                           `((body . ,(lab--comment-content comment))))))))
+
 ;;;;;; Other
 
 (defun lab-merge-request-diff-mode-update-header (&rest _)
+  "Update header line with current review status."
   (let* ((all (seq-group-by #'lab--comment-status
                             (lab--all-comments-in-buffer)))
          (sent (length (alist-get 'sent all)))
@@ -2124,37 +2205,6 @@ In this buffer you can use the following functions:
         (setq-local lab--merge-request-threads threads)
         (setq-local lab--merge-request-diffs diffs)
         (setq-local lab--current-user current-user)))))
-
-(defun lab--put-comment (init on-accept)
-  "Get comment from user.
-ON-ACCEPT should return the created overlay."
-  (let* ((oldwin (current-window-configuration))
-         (beg (if (use-region-p)
-                  (save-excursion
-                    (goto-char (region-beginning))
-                    (pos-bol))
-                (pos-bol)))
-         (end (if (use-region-p)
-                  (save-excursion
-                    (goto-char (region-end))
-                    (forward-char -1)
-                    (pos-eol))
-                (pos-eol)))
-         (buffer (current-buffer)))
-    (lab--user-input
-     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
-     :parser #'buffer-string
-     :init init
-     :on-reject
-     (lambda (&rest _)
-       (set-window-configuration oldwin))
-     :on-accept
-     (lambda (_ input)
-       (set-window-configuration oldwin)
-       (with-current-buffer buffer
-         (deactivate-mark)
-         (let ((ov (funcall on-accept beg end input)))
-           (seq-each (lambda (hook) (funcall hook (overlay-get ov 'lab-comment))) lab-add-comment-hook)))))))
 
 (defun lab-new-thread ()
   (interactive nil lab-merge-request-diff-mode)
@@ -2332,47 +2382,6 @@ ON-ACCEPT should return the created overlay."
         (lab-unresolve-thread ov)
       (lab-resolve-thread ov))))
 
-(defun lab--make-new-thread (comment)
-  (let* ((pt (progn
-               ;; TODO: Using "end" here because we do not support
-               ;; ranges right now.
-               (goto-char (lab--comment-end comment))
-               (point)))
-         (line (thing-at-point 'line))
-         (unchanged-line? (s-matches? "^ " line))
-         ;; TODO: maybe also put lab-diff thing into the comment object
-         (diff (get-text-property (point) 'lab-diff))
-         (data
-          (let-alist (car lab--merge-request-versions) ; last version
-            `((body . ,(lab--comment-content comment))
-              (position . ((base_sha . ,.base_commit_sha)
-                           (start_sha . ,.start_commit_sha)
-                           (head_sha . ,.head_commit_sha)
-                           (position_type . "text")
-                           (old_path . ,(alist-get 'old_path diff))
-                           (new_path . ,(alist-get 'new_path diff))
-                           ;; (line_range . "TODO")
-                           ,@(when (or (s-prefix? "+" line) unchanged-line?)
-                               `((new_line . ,(lab--diff-find-line-number-at pt))))
-                           ,@(when (or (s-prefix? "-" line) unchanged-line?)
-                               `((old_line . ,(lab--diff-find-line-number-at pt :old))))))))))
-    (let-alist lab--merge-request
-      (cons comment (list
-                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                     :%type "POST"
-                     :%headers '(("Content-Type" . "application/json"))
-                     :%data (json-encode data))))))
-
-(defun lab--make-new-thread-reply (comment)
-  (let-alist lab--merge-request
-    (cons comment (list
-                   (format "projects/%s/merge_requests/%s/discussions/%s/notes"
-                           .project_id .iid (lab--comment-thread-id comment))
-                   :%type "POST"
-                   :%headers '(("Content-Type" . "application/json"))
-                   :%data (json-encode
-                           `((body . ,(lab--comment-content comment))))))))
-
 (defun lab-send-review ()
   (interactive nil lab-merge-request-diff-mode)
   (when (y-or-n-p (format "Do you want to %s send comments to this MR?" lab--pending-comment-count))
@@ -2418,12 +2427,6 @@ ON-ACCEPT should return the created overlay."
           (goto-char (overlay-start prev))
           (seq-each #'funcall lab-jump-to-thread-hook))
       (user-error "No more threads/comments behind"))))
-
-(declare-function outline-show-subtree "outline")
-(defun lab--reveal-thread ()
-  "Reveal jumped thread."
-  (when (bound-and-true-p outline-minor-mode)
-    (outline-show-subtree)))
 
 ;;;;;; Interactive helpers
 
