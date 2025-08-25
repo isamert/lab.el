@@ -1731,17 +1731,73 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 (cl-defstruct (lab--comment (:constructor lab--make-comment)
                             (:copier nil))
-  (status nil :type '(member 'new 'sent 'other))
-  (placement nil :type '(member 'top-level 'reply))
-  (id nil :type 'string)
-  (thread-id nil :type 'string)
-  (content nil :type 'string)
-  (beginning nil :type 'number)
-  (end nil :type 'number)
-  (username nil :type 'string)
-  (created-at nil :type 'string)
-  (resolved-by nil :type 'string)
-  (resolved-at nil :type 'string)
+  (status
+   nil
+   :type '(member 'new 'sent 'other)
+   :documentation
+   "The status of the comment.
+\\='new means it's created locally and not sent to the server yet.
+\\='sent means it was \\='new and then it's sent to the server.
+\\='other means it's neither of the above, e.g. loaded from the server.")
+  (placement
+   nil
+   :type '(member 'top-level 'reply)
+   :documentation
+   "Whether this comment is a top-level comment or a reply to another comment.")
+  (id
+   nil
+   :type 'string
+   :documentation
+   "ID of the comment on the server.")
+  (thread-id
+   nil
+   :type 'string
+   :documentation
+   "ID of the thread this comment belongs to.")
+  (content
+   nil
+   :type 'string
+   :documentation
+   "Content of the comment.
+This is in markdown format and formatted as markdown while displaying.")
+  (beginning
+   nil
+   :type 'number
+   :documentation
+   "Beginning position of the comment in the buffer.")
+  (end
+   nil
+   :type 'number
+   :documentation
+   "End position of the comment in the buffer.")
+  (username
+   nil
+   :type 'string
+   :documentation
+   "Username of the comment author.
+This is not the \"display name\" and should not start with @.")
+  (created-at
+   nil
+   :type 'string
+   :documentation
+   "Creation time of the comment in ISO 8601 format.
+This is not a `time' object, but a string like \"2021-09-30T12:34:56Z\".
+If nil, then formatted as \"now\".")
+  (resolved-by
+   nil
+   :type 'string
+   :documentation
+   "Username of the user who resolved this comment.
+This is not the \"display name\" and should not start with @.
+Nil if the comment is not resolved.")
+  (resolved-at
+   nil
+   :type 'string
+   :documentation
+   "Resolution time of the comment in ISO 8601 format.
+This is not a `time' object, but a string like \"2021-09-30T12:34:56Z\".
+Nil if the comment is not resolved.
+If nil, then formatted as \"now\".")
   (children nil :type '(list lab--comment)))
 
 (defun lab--comment-overlay? (ov)
@@ -2111,11 +2167,9 @@ This function assumes you are currently on a hunk header."
 ;;;###autoload
 (defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
-In this buffer you can use the following functions:
-- `lab-new-thread' to add a comment for current (or selected) line(s).
-- `lab-edit-comment' to edit a comment you added with `lab-new-thread'.
-- `lab-delete-comment' to remove a comment you added with `lab-new-thread'
-- `lab-delete-all-comments' to remove all comments."
+In this buffer you can use the following functions: See the
+`lab-merge-request-diff-prefix-map' for all the possible functions you
+can call in the diff buffer.  By default it's bound to C-c ;"
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (let* ((mr (lab--parse-merge-request-url url))
          (threads (let-alist mr
@@ -2207,6 +2261,7 @@ In this buffer you can use the following functions:
         (setq-local lab--current-user current-user)))))
 
 (defun lab-new-thread ()
+  "Create a new thread at the current line."
   (interactive nil lab-merge-request-diff-mode)
   (lab--put-comment "" (lambda (beg end input)
                          (save-excursion
@@ -2219,6 +2274,15 @@ In this buffer you can use the following functions:
                              :content input))))))
 
 (defun lab-reply-thread (ov)
+  "Add reply to the thread.
+You'll be put in a buffer to write your reply which contains all the
+other replies in the thread as comments so that you have context and you
+can easily copy/paste.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((ov ov)
               (comment (overlay-get ov 'lab-comment)))
@@ -2250,6 +2314,18 @@ In this buffer you can use the following functions:
        (save-excursion (lab--put-comment-overlay comment))))))
 
 (defun lab-edit-thread (ov)
+  "Edit a comment from the thread.
+
+If there is only one comment in the thread, edit it directly.  Otherwise
+this let's you interactively select which comment to edit.
+
+Edits on existing comments are sent directly to the server, you don't
+need to call `lab-send-review'.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (let* ((comment (overlay-get ov 'lab-comment))
@@ -2283,6 +2359,14 @@ In this buffer you can use the following functions:
                          (message "lab :: Failed to edit thread: %s" err)))))))))))
 
 (defun lab-delete-thread (ov)
+  "Delete a comment from the thread.
+If there is only one comment in the thread, delete it directly.
+Otherwise this let's you interactively select which comment to delete.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (let* ((comment (overlay-get ov 'lab-comment))
@@ -2329,6 +2413,12 @@ In this buffer you can use the following functions:
         (seq-each (lambda (hook) (funcall hook comment)) lab-delete-comment-hook)))))
 
 (defun lab-resolve-thread (ov)
+  "Resolve the thread.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment))
@@ -2352,6 +2442,12 @@ In this buffer you can use the following functions:
       (_ (error "Not implemented")))))
 
 (defun lab-unresolve-thread (ov)
+  "Unresolve the thread.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment))
@@ -2375,6 +2471,12 @@ In this buffer you can use the following functions:
       (_ (error "Not implemented")))))
 
 (defun lab-toggle-thread-resolve-status (ov)
+  "Toggle between resolved and unresolved states for the thread.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment)))
@@ -2383,6 +2485,7 @@ In this buffer you can use the following functions:
       (lab-resolve-thread ov))))
 
 (defun lab-send-review ()
+  "Send the pending comments to the server."
   (interactive nil lab-merge-request-diff-mode)
   (when (y-or-n-p (format "Do you want to %s send comments to this MR?" lab--pending-comment-count))
     (message "lab :: Sending review...")
@@ -2400,10 +2503,12 @@ In this buffer you can use the following functions:
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-open-merge-request-on-web ()
+  "View the current merge request on web interface."
   (interactive nil lab-merge-request-diff-mode)
   (browse-url lab--merge-request-url))
 
 (defun lab-forward-merge-request-thread ()
+  "Go to next merge request thread."
   (interactive nil lab-merge-request-diff-mode)
   (let* ((ovs (seq-filter
                #'lab--comment-overlay?
@@ -2416,6 +2521,7 @@ In this buffer you can use the following functions:
       (user-error "No more threads/comments ahead"))))
 
 (defun lab-backward-merge-request-thread ()
+  "Go to previous merge request thread."
   (interactive nil lab-merge-request-diff-mode)
   (let* ((ovs (reverse
                (seq-filter
