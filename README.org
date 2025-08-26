@@ -3,39 +3,62 @@
 [[https://stable.melpa.org/#/lab][file:https://stable.melpa.org/packages/lab-badge.svg]]
 [[https://melpa.org/#/lab][file:https://melpa.org/packages/lab-badge.svg]]
 
-/lab.el/ is an Emacs package that provides a simple integration with GitLab (managed or self-hosted).
+/lab.el/ is an Emacs package that provides a simple integration with
+GitLab (managed or self-hosted). It also allows you to conduct full
+code reviews totally inside Emacs!
 
 * Basics
 
-~lab.el~ is designed to make your /daily/ interactions with GitLab easier. Want to quickly list latest merge requests for a project? You got covered! Want to create a merge request for the project you are currently working on, totally inside Emacs? You got covered! Want every function on GitLab API exposed as an elisp function? You are on your own. See /Functionality summary/ down below for a quick rundown of what ~lab.el~ is capable of.
+~lab.el~ is designed to make your /daily/ interactions with GitLab
+easier. See /Functionality summary/ down below for a quick rundown of
+what ~lab.el~ is capable of and for some screenshots!
 
-Workflow is generally ~completing-read~ based. You list and select an item (a project/merge request/pipeline/job) and then you trigger one of the listed actions that can be acted upon selected item. There are also other special interactive functions, like ~lab-create-merge-request~. Also some functions work directly on current project you are working on (provided by ~project.el~).
+Workflow is generally ~completing-read~ based. You list and select an
+item (a project/merge request/pipeline/job) and then you trigger one
+of the listed actions that can be acted upon selected item. There are
+also other special interactive functions, like
+~lab-create-merge-request~. Also some functions work directly on current
+project you are working on (provided by ~project.el~).
 
-/lab.el/ also supports [[https://github.com/oantolin/embark][embark]], you can use ~(embark-act)~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions (possibly using ~embark-act-all~) as the primary feature of embark, /listing actions of a target/, is already covered by /lab.el/.
+/lab.el/ also supports [[https://github.com/oantolin/embark][embark]], you can use ~(embark-act)~ on any kind of
+item and you'll see all possible actions. This is generally useful for
+doing bulk actions (possibly using ~embark-act-all~) as the primary
+feature of embark, /listing actions of a target/, is already covered by
+/lab.el/.
 
-I extracted this package from my ~init.el~ as the feature set grew to a point that is too much to keep it in there. This may explain why some of the functionality that you expect a GitLab client would have is missing. It's because I probably don't use that feature.
+I extracted this package from my ~init.el~ as the feature set grew to a
+point that is too much to keep it in there. This may explain why some
+of the functionality that you expect a GitLab client would have is
+missing. It's because I probably don't use that feature.
 
 * Installation
-lab is available through [[https://melpa.org/#/lab][MELPA]]. If you have it set up already, just do ~M-x package-install lab~ and you are good to go. Otherwise please see [[https://melpa.org/#/getting-started][MELPA getting started]] page to learn how you can install packages through MELPA or see the following installation options.
 
-Another way to install =lab.el= would be using either [[https://github.com/radian-software/straight.el][straight]] or [[https://github.com/quelpa/quelpa-use-package][quelpa]] package managers:
+lab is available through [[https://melpa.org/#/lab][MELPA]]. If you have it set up already, just do
+~M-x package-install lab~ and you are good to go. Otherwise please see
+[[https://melpa.org/#/getting-started][MELPA getting started]] page to learn how you can install packages
+through MELPA or see the following installation options.
+
+Another way to install =lab.el= would be using either [[https://github.com/radian-software/straight.el][straight]] or [[https://github.com/quelpa/quelpa-use-package][quelpa]]
+package managers:
 
 #+begin_src elisp
-  ;; Using straight:
-  (use-package lab
-    :straight (:host github :repo "isamert/lab.el"))
+;; Using straight:
+(use-package lab
+  :straight (:host github :repo "isamert/lab.el"))
 
-  ;; Using quelpa:
-  (use-package lab
-    :quelpa (lab
-             :fetcher github
-             :repo "isamert/lab.el"))
+;; Using quelpa:
+(use-package lab
+  :quelpa (lab
+           :fetcher github
+           :repo "isamert/lab.el"))
 #+end_src
 
-Yet another option is just downloading =lab.el= file and putting into your =load-path=, afterwards you can simply do the following in your =init.el=:
+Yet another option is just downloading =lab.el= file and putting into
+your =load-path=, afterwards you can simply do the following in your
+=init.el=:
 
 #+begin_src elisp
-  (require 'lab)
+(require 'lab)
 #+end_src
 
 * Usage
@@ -43,20 +66,20 @@ Yet another option is just downloading =lab.el= file and putting into your =load
 Set the following variables and you are good to go:
 
 #+begin_src elisp
-  ;; Required.
-  (setq lab-host "https://gitlab.mycompany.com")
+;; Required.
+(setq lab-host "https://gitlab.mycompany.com")
 
-  ;; Required.
-  ;; See the following link to learn how you can gather one for yourself:
-  ;; https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token
-  (setq lab-token "YOUR-PRIVATE-GITLAB-API-TOKEN")
+;; Required.
+;; See the following link to learn how you can gather one for yourself:
+;; https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#create-a-personal-access-token
+(setq lab-token "YOUR-PRIVATE-GITLAB-API-TOKEN")
 
-  ;; Optional, but useful. See the variable documentation.
-  (setq lab-group "YOUR-GROUP-ID")
+;; Optional, but useful. See the variable documentation.
+(setq lab-group "YOUR-GROUP-ID")
 #+end_src
 
-Alternative you could retrieve your token using auth-source. Some auth-source
-backends support encryption. ej.
+Alternative you could retrieve your token using auth-source. Some
+auth-source backends support encryption.
 
 #+begin_src elisp
 (setq auth-sources '("~/.authinfo.gpg"))
@@ -69,34 +92,51 @@ See ~M-x customize-group lab~ for all customization options.
 
 * Functionality summary
 
-Here is a quick rundown of features ~lab.el~ provides. I've included entry functions inside parenthesis but some of the functionality is accessed through other listing functions.
+Here is a quick rundown of features ~lab.el~ provides. I've included
+entry functions inside parenthesis but some of the functionality is
+accessed through other listing functions.
 
 - Projects ::
-  - List projects belonging to you or a group (~lab-list-all-{owned,group}-projects~), and act on these projects. Search projects using ~lab-search-project~ (optionally with [[https://github.com/minad/consult][consult]] live search support).
+  - List projects belonging to you or a group
+    (~lab-list-all-{owned,group}-projects~), and act on these
+    projects. Search projects using ~lab-search-project~ (optionally
+    with [[https://github.com/minad/consult][consult]] live search support).
     - Open them in browser.
     - Clone single project or do a bulk cloning.
     - List merge requests of given project.
     - Show detailed information about given project.
   - Bulk pull projects to keep your local copies up-to-date (~lab-pull-bulk~).
+  - Bulk clone projects from given namespace, with exact same hierarchy (~lab-clone-bulk~).
 - Merge Requests ::
-  - List merge requests belonging to a group, a branch, a project or all merge requests that you created or assigned to (~lab-list-{my,group,branch,project}-merge-requests~), and act on these merge requests:
+  - Conduct code reviews totally inside Emacs!
+  - List merge requests belonging to a group, a branch, a project or
+    all merge requests that you created or assigned to
+    (~lab-list-{my,group,branch,project}-merge-requests~), and act on
+    these merge requests:
     - Open them in browser.
     - Mark them as ready or as draft.
     - Rebase remote branch against the target.
     - List pipelines and act on them.
     - Show detailed information about given merge request.
-  - Create merge requests with an easy to use merge request wizard. It also let's you edit details of your merge requests in markdown buffer with yaml header and shows you the diff generated by your merge request (~lab-create-merge-request~).
+  - Create merge requests with an easy to use merge request wizard. It
+    also let's you edit details of your merge requests in markdown
+    buffer with yaml header and shows you the diff generated by your
+    merge request (~lab-create-merge-request~).
 - Pipelines ::
-  - List pipelines belonging to a project or a merge request (~lab-list-project-pipelines~), and act on these pipelines:
+  - List pipelines belonging to a project or a merge request
+    (~lab-list-project-pipelines~), and act on these pipelines:
     - Open them in browser.
     - Trigger retries, cancellation or deletion.
-    - Start watching given pipeline in background and get notified if pipeline finishes or requires a manual action.
+    - Start watching given pipeline in background and get notified if
+      pipeline finishes or requires a manual action.
     - List individual jobs of a pipeline and act on them.
     - Show detailed information about given pipeline.
-  - Automatically start watching pipelines after a push and get notified about their status. (See /Extras/tips/ section below)
+  - Automatically start watching pipelines after a push and get
+    notified about their status. (See /Extras/tips/ section below)
 - Jobs ::
   - List jobs belonging to a pipeline.
-  - Show logs of a (latest) failing job in a nicely formatted Emacs buffer (~lab-act-on-last-failed-pipeline-job~).
+  - Show logs of a (latest) failing job in a nicely formatted Emacs
+    buffer (~lab-act-on-last-failed-pipeline-job~).
   - Act on jobs:
     - Open them in browser.
     - Trigger retries, cancellation or deletion.
@@ -109,35 +149,164 @@ Here is a quick rundown of features ~lab.el~ provides. I've included entry funct
     - Open them in browser.
     - Mark as done.
 
-Here are few screenshots to get a feel of what you would see while using ~lab.el~:
+Here are few screenshots to get a feel of what you would see while
+using ~lab.el~:
 
 [[file:https://user-images.githubusercontent.com/8031017/204106589-7558cac5-e41c-4fe5-8834-1df610b736f4.png]]
 
-By default, actions can be selected using ~read-multiple-choice~. You can change this to a ~completing-read~ based action handler by modifying the ~lab-action-handler~ variable.
+By default, actions can be selected using ~read-multiple-choice~. You
+can change this to a ~completing-read~ based action handler by modifying
+the ~lab-action-handler~ variable.
 
 [[file:https://user-images.githubusercontent.com/8031017/204106597-f51d3e9c-084e-45e2-bbeb-c2dee6a7a2d9.png]]
 
-Other functions work in similar fashion, where you list something (projects/pipelines/jobs etc.) and act upon them. Here is how you create a merge request:
+Other functions work in similar fashion, where you list something
+(projects/pipelines/jobs etc.) and act upon them. Here is how you
+create a merge request:
 
 [[file:https://user-images.githubusercontent.com/8031017/204106593-3acdaffc-a1a4-4115-9fd8-339d2ac3930f.png]]
+
+* Code reviews
+
+Either use the function ~lab-open-merge-request-diff~ and give it a
+merge request link or use any of the following functions to find a
+merge request:
+
+- ~lab-list-my-merge-requests~
+- ~lab-list-group-merge-requests~
+- ~lab-list-branch-merge-requests~
+- ~lab-list-project-merge-requests~
+
+and then open the diff view by issuing the ~diff & review~ action.
+
+You'll be dropped into the diff of the given merge request inside a
+~diff-mode~. Here you can use the following commands:
+
+| Key       | Binding                            |                                                                                                                     |
+|-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
+| ~C-c ; RET~ | lab-send-review                    | Send the pending review. See the header line for the review status.                                                 |
+| ~C-c ; n~   | lab-new-thread                     | Create a new thread at given line.                                                                                  |
+| ~C-c ; r~   | lab-reply-thread                   | Add a reply to an existing thread at point.                                                                         |
+| ~C-c ; e~   | lab-edit-thread                    | Edit the thread or child comment in the thread at point. Effect is immediate for already existing comments/threads. |
+| ~C-c ; x~   | lab-delete-thread                  | Delete the thread or child comment in the thread at point.                                                          |
+| ~C-c ; t~   | lab-toggle-thread-resolve-status   | Toggle the "Resolved" status of the thread.                                                                         |
+|-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
+| ~C-c ; [~   | lab-backward-merge-request-thread  | Jump to the previous thread.                                                                                        |
+| ~C-c ; ]~   | lab-forward-merge-request-thread   | Jump to the next thread.                                                                                            |
+|-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
+| ~C-c ; o~   | lab-open-merge-request-on-web      | Open the MR view on your web browser of the current MR you are reviewing.                                           |
+|-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
+| ~C-c ; i m~ | lab-inspect-merge-request          | Inspect the raw server response for this merge request.                                                             |
+| ~C-c ; i d~ | lab-inspect-merge-request-diffs    | Inspect the raw server response for this merge request's diffs.                                                     |
+| ~C-c ; i t~ | lab-inspect-merge-request-threads  | Inspect the raw server response for this merge request's threads.                                                   |
+| ~C-c ; i v~ | lab-inspect-merge-request-versions | Inspect the raw server response for this merge request's versions                                                   |
+
+The list may be outdated, see ~M-x desribe-keymap lab-merge-request-diff-prefix-map~ for an up-to-date list.
+
+** Recommended diff-mode setup
+
+To make the diff mode more pleasant to work with, I recommend the
+following configuration:
+
+#+begin_src  elisp
+;; Normally diff-mode uses reliable syntax highlighting by detecting
+;; the full file with the support of vc backend but if there is no
+;; context, then it does not apply the font lock.  This option makes
+;; it use reliable highlighting if available, if not then it uses hunk
+;; based dumb highlighting without the context. Since you are not
+;; opening the diff inside the correct project (see down below to do
+;; this), this is required for having syntax highlighting.
+(setq diff-font-lock-syntax 'hunk-also)
+
+;; Prettify the hunk headers, easier on the eye.
+(setq diff-font-lock-prettify t)
+
+;; To be able to fold hunks/files etc.
+(add-hook 'diff-mode-hook #'outline-minor-mode)
+
+;; With the one above, you can also have these bindings to make your
+;; life easier:
+(define-key diff-mode-map "1" (lambda () (interactive) (outline-hide-sublevels 1)))
+(define-key diff-mode-map "2" (lambda () (interactive) (outline-hide-sublevels 2)))
+(define-key diff-mode-map "3" #'outline-show-all)
+#+end_src
+
+** Tips & workflow enhancements
+
+You can open the merge request diff inside the correct project and
+this way when you use functions like ~diff-goto-source~ etc. they will
+work as intended. You can use the ~lab-open-merge-request-diff-hook~ to
+control this. Here I present some examples, using ~project.el~
+capabilities:
+
+#+begin_src elisp
+;; Always ask which project this MR belongs to and then open it at the
+;; root of that project
+(add-hook
+ 'lab-open-merge-request-diff-hook
+ (lambda (&rest _)
+   (cd (funcall project-prompter))))
+
+;; Check if we are currently in *a* project, if not, ask which project
+;; should we open this MR diff in.
+(add-hook
+ 'lab-open-merge-request-diff-hook
+ (lambda (&rest _)
+   (unless (project-current)
+     (cd (funcall project-prompter)))))
+
+;; Check if we are currently in *the* right project (determine that by
+;; comparing the MR's project's name and the (project-current)'s
+;; name), if not, ask which project should we open this MR diff in.
+(add-hook
+ 'lab-open-merge-request-diff-hook
+ (cl-function
+  (lambda (&key project &allow-other-keys)
+    (when (or (not (project-current))
+              (not (string-suffix-p (project-name (project-current))
+                                    (plist-get project :path)
+                                    'ignore-case)))
+      (cd (funcall project-prompter))))))
+#+end_src
+
+With this, you can also so all kind of crazy stuff like checking out
+to the branch of the merge request etc. See the documentation of
+~lab-open-merge-request-diff-hook~ for more information.
 
 * Extras/tips
 
 ** Embark and Consult integration
 
-If you have [[https://github.com/minad/consult][consult]] and [[https://github.com/oantolin/embark][embark]] installed on your Emacs, ~lab.el~ will automatically integrate itself with them. If you have ~consult~ installed, you get live search feature on some of the commands, like ~lab-search-project~.  With embark, you can use ~(embark-act)~ on any kind of item and you'll see all possible actions. This is generally useful for doing bulk actions (possibly using ~embark-act-all~) as the primary feature of embark, /listing actions of a target/, is already covered by /lab.el/.
+If you have [[https://github.com/minad/consult][consult]] and [[https://github.com/oantolin/embark][embark]] installed on your Emacs, ~lab.el~ will
+automatically integrate itself with them. If you have ~consult~
+installed, you get live search feature on some of the commands, like
+~lab-search-project~.  With embark, you can use ~(embark-act)~ on any kind
+of item and you'll see all possible actions. This is generally useful
+for doing bulk actions (possibly using ~embark-act-all~) as the primary
+feature of embark, /listing actions of a target/, is already covered by
+/lab.el/.
 
 Installing these packages are highly recommended.
 
 ** Keybindings
 
-No default keybindings are provided but there is ~lab-map~ keymap which contains some interactive lab functions. You can bind this keymap to a key, like following:
+No default keybindings are provided but there is ~lab-map~ keymap which
+contains some interactive lab functions. You can bind this keymap to a
+key, like following:
 
-  #+begin_src emacs-lisp
-  (bind-key "C-x l" lab-map)
-  #+end_src
+#+begin_src emacs-lisp
+(bind-key "C-x l" lab-map)
+#+end_src
 
-...and now you can do ~C-x mm~ to list your open merge requests, for example.  Do ~M-x describe-keymap~ lab-map to list all actions in this keymap.
+...and now you can do ~C-x mm~ to list your open merge requests, for
+example. Do ~M-x describe-keymap lab-map RET~ to list all actions in this
+keymap.
+
+For merge request diff view (where you do the code reviews), the
+prefix ~C-c ;~ contains all the interactive functions you can use. You
+can also bind the ~lab-merge-request-diff-prefix-map~ to any other key
+if you want. Do ~M-x describe-keymap ~lab-merge-request-diff-prefix-map
+RET~ to list all actions in this keymap.
 
 ** Supplemental packages
 
@@ -145,61 +314,73 @@ Some packages enhances ~lab.el~ with extra features:
 
 - [[https://github.com/jwiegley/alert][alert]] :: Desktop notifications for ~lab-watch-*~ commands.
 - [[https://github.com/jrblevin/markdown-mode][markdown-mode]] :: For better ~lab-create-merge-request~.
-- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Version-Control.html][vc]] :: Shows you the diff generated by your merge request while creating a merge request with ~lab-create-merge-request~.
-- [[https://github.com/sshaw/git-link][git-link]] :: Open current repository in browser easily. ~lab.el~ does not use this package but it's nice to have if your workflow requires some manual interventions to GitLab UI.
+- [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Version-Control.html][vc]] :: Shows you the diff generated by your merge request while
+  creating a merge request with ~lab-create-merge-request~.
+- [[https://github.com/sshaw/git-link][git-link]] :: Open current repository in browser easily. ~lab.el~ does
+  not use this package but it's nice to have if your workflow requires
+  some manual interventions to GitLab UI.
 
 ** Start watching your pipeline automatically
 
 - After creating an MR:
 
   #+begin_src emacs-lisp
-    (add-hook lab-after-merge-requests-create-functions #'lab-watch-merge-request-last-pipeline)
+  (add-hook lab-after-merge-requests-create-functions
+   #'lab-watch-merge-request-last-pipeline)
   #+end_src
 
 - After pushing a commit:
 
   #+begin_src emacs-lisp
-    (add-hook YOUR-PUSH-HOOK #'lab-watch-pipeline-for-last-commit)
+  (add-hook YOUR-PUSH-HOOK #'lab-watch-pipeline-for-last-commit)
   #+end_src
 
-- If you are using [[https://github.com/magit/magit][magit]], following advice may be used for triggering pipeline watcher after each push:
+- If you are using [[https://github.com/magit/magit][magit]], following advice may be used for triggering
+  pipeline watcher after each push:
 
   #+begin_src emacs-lisp
-    (define-advice magit-push-current-to-pushremote (:after (&rest _) start-watching-pipeline)
-      (lab-watch-pipeline-for-last-commit))
+  (define-advice magit-push-current-to-pushremote (:after (&rest _)
+   start-watching-pipeline)
+    (lab-watch-pipeline-for-last-commit))
   #+end_src
 
-- If you are using vc, it would be the following:
+- If you are using ~vc~, it would be the following:
 
   #+begin_src emacs-lisp
-    (define-advice vc-push (:after (&rest _) start-watching-pipeline)
-      (lab-watch-pipeline-for-last-commit))
+  (define-advice vc-push (:after (&rest _) start-watching-pipeline)
+    (lab-watch-pipeline-for-last-commit))
   #+end_src
 
 ** ~project.el~ integration
 
-You can integrate the ~lab.el~ functions you frequently use into ~project.el~, like following:
+You can integrate the ~lab.el~ functions you frequently use into
+~project.el~, like following:
 
 #+begin_src emacs-lisp
-  (define-key project-prefix-map "M" #'lab-list-project-merge-requests)
-  (add-to-list 'project-switch-commands `(lab-list-project-merge-requests "List merge requests"))
+(define-key project-prefix-map "M" #'lab-list-project-merge-requests)
+(add-to-list 'project-switch-commands `(lab-list-project-merge-requests "List merge requests"))
 
-  (define-key project-prefix-map "P" #'lab-list-project-pipelines)
-  (add-to-list 'project-switch-commands `(lab-list-project-pipelines "List pipelines"))
+(define-key project-prefix-map "P" #'lab-list-project-pipelines)
+(add-to-list 'project-switch-commands `(lab-list-project-pipelines "List pipelines"))
 #+end_src
 
-Now ~List pipelines~ and ~List merge requests~ actions will be added to ~project.el~ actions list and you'll be able to access them using ~C-x p M~ and ~C-x p P~ respectively.
+Now ~List pipelines~ and ~List merge requests~ actions will be added to
+~project.el~ actions list and you'll be able to access them using ~C-x p
+M~ and ~C-x p P~ respectively.
 
 ** org-mode integration
 
-~lab.el~ provides a dynamic block named ~lab-merge-requests~ which let's you list merge requests that matches your query. See the following example.
+~lab.el~ provides a dynamic block named ~lab-merge-requests~ which let's
+you list merge requests that matches your query. See the following
+example.
 
 #+begin_src org
 ,#+begin: lab-merge-requests :type group :group "my" :limit 4 :state opened :headers ("state" "title" "author.username")
 ,#+end
 #+end_src
 
-Hitting ~C-c C-c~ on this line will fetch the requests and display something like the following:
+Hitting ~C-c C-c~ on this line will fetch the requests and display
+something like the following:
 
 #+begin_src org
 ,#+begin: lab-merge-requests :type group :group "my" :limit 4 :state opened :headers ("state" "title" "author.username")
@@ -212,23 +393,45 @@ Hitting ~C-c C-c~ on this line will fetch the requests and display something lik
 ,#+end
 #+end_src
 
-This dynamic block has various options that let you change how the merge requests are displayed and filtered. Refer to the documentation of the function ~org-dblock-write:lab-merge-requests~ to learn more.
+This dynamic block has various options that let you change how the
+merge requests are displayed and filtered. Refer to the documentation
+of the function ~org-dblock-write:lab-merge-requests~ to learn more.
 
 * Using as a GitLab API client
 
-You can use the provided ~lab--request~ function write your on [[https://docs.gitlab.com/ee/api/api_resources.html][GitLab API]] wrappers:
+You can use the provided ~lab--request~ function write your on [[https://docs.gitlab.com/ee/api/api_resources.html][GitLab
+API]] wrappers:
 
 #+begin_src elisp
-  ;; Get *all* pipelines currently running on master.
-  (lab--request
-   "projects/#{project}/pipelines"
-   :scope "running"
-   :ref "master"
-   :%collect-all t)
+;; Get *all* pipelines currently running on master, for current project.
+;; Request blocks the UI.
+(lab--request
+ "projects/#{project}/pipelines"
+ :scope "running"
+ :ref "master"
+ :%collect-all t)
+
+;; Get *all* pipelines currently running on master, for project 1234.
+;; Make the request async and get the result in a callback.
+(lab--request
+ "projects/1234/pipelines"
+ :scope "running"
+ :ref "master"
+ :%collect-all t
+ :%success (lambda (result)
+             (message "Got the results...")
+             (lab--inspect-obj result)))
 #+end_src
 
+See the documentation of ~lab--request~ for more options, use
+cases. Although this function is subject to change (hence it's marked
+as private), I anticipate the changes will be minimal.
+
 * Differences & similarities with [[https://github.com/magit/forge][forge]]
-Although /lab.el/ and /forge/ have some overlapping features, they can be used together to complement each other. Here is a comment I made earlier when the difference is asked:
+
+Although /lab.el/ and /forge/ have some overlapping features, they can be
+used together to complement each other. Here is a comment I made
+earlier when the difference is asked:
 
 #+begin_quote
 I don't use forge (tried in the past but not got so far with it), so I cant really give a throughout answer but here is a quick summary as far as I know:

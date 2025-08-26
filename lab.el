@@ -3,7 +3,7 @@
 ;; Copyright (C) 2023-2025 Isa Mert Gurbuz
 
 ;; Author: Isa Mert Gurbuz <isamertgurbuz@gmail.com>
-;; Version: 2.4.0
+;; Version: 3.0.0
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "27.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
@@ -327,7 +327,7 @@ to a key, like following:
 
   (bind-key \"C-x l\" lab-map)
 
-...and now you can do `C-x mm' to list your open merge requests,
+...and now you can do `C-x l m m' to list your open merge requests,
 for example.  Do \\[execute-extended-command] `describe-keymap'
 lab-map to list all actions in this keymap.")
 
@@ -2220,7 +2220,15 @@ can call in the diff buffer.  By default it's bound to C-c ;"
         (remove-overlays)
         (erase-buffer)
         (seq-each
-         (lambda (fn) (funcall fn :mr mr :diffs diffs :threads threads :versions versions))
+         (lambda (fn)
+           (funcall
+            fn
+            ;; This is not the best way to extract the project name,
+            ;; we might get an id instead of the real project name but
+            ;; as far as our usages concerned, it's always the project
+            ;; name.
+            :project `(:path ,(url-unhex-string (alist-get 'project_id mr)))
+            :mr mr :diffs diffs :threads threads :versions versions))
          lab-open-merge-request-diff-hook)
         (dolist (diff diffs)
           (let ((hunk (lab--format-hunk diff)))

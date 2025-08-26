@@ -1,6 +1,11 @@
+* 3.0.0
+
+- Add code review support.
+- Some fixes.
+
 * v2.4.2
 
-- Fix autloading issues
+- Fix autoloading issues
 
 * v2.4.1
 
