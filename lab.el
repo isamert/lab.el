@@ -1969,8 +1969,27 @@ ON-ACCEPT should return the created overlay."
        (set-window-configuration oldwin)
        (with-current-buffer buffer
          (deactivate-mark)
-         (let ((ov (funcall on-accept beg end input)))
+         (let ((ov (funcall on-accept beg end (lab--clear-comment-input input))))
            (seq-each (lambda (hook) (funcall hook (overlay-get ov 'lab-comment))) lab-add-comment-hook)))))))
+
+(defun lab--prepare-reply-context (comment)
+  "Return a text containing all the COMMENTs and it's children content as markdown comment."
+  (concat
+   (seq-reduce
+    (lambda (acc it)
+      (concat
+       acc "\n\n"
+       (lab--spacer :pre "━━━━━" :header (lab--make-comment-header it))
+       (lab--comment-content it)))
+    (append (list comment) (lab--comment-children comment))
+    "<!-- *THESE COMMENT LINES WILL BE IGNORED*")
+   "\n-->\n\n"))
+
+(defun lab--clear-comment-input (input)
+  (thread-last
+    input
+    (replace-regexp-in-string "<!--\\(.\\|\n\\)*?-->" "" )
+    (s-trim)))
 
 ;;;;;; Diff stuff
 
@@ -2287,16 +2306,7 @@ select one."
   (when-let* ((ov ov)
               (comment (overlay-get ov 'lab-comment)))
     (lab--put-comment
-     (concat
-      (seq-reduce
-       (lambda (acc it)
-         (concat
-          acc "\n\n"
-          (lab--spacer :pre "━━━━━" :header (lab--make-comment-header it))
-          (lab--comment-content it)))
-       (append (list comment) (lab--comment-children comment))
-       "<!-- *THESE COMMENT LINES WILL BE IGNORED*")
-      "\n-->\n")
+     (lab--prepare-reply-context comment)
      (lambda (_beg _end input)
        (delete-overlay ov)
        (setf (lab--comment-children comment)
@@ -2306,11 +2316,7 @@ select one."
                             :placement 'reply
                             :thread-id (lab--comment-thread-id comment)
                             :username "<you>"
-                            :content
-                            (thread-last
-                              input
-                              (replace-regexp-in-string "<!--\\(.\\|\n\\)*?-->" "" )
-                              (s-trim))))))
+                            :content input))))
        (save-excursion (lab--put-comment-overlay comment))))))
 
 (defun lab-edit-thread (ov)
@@ -2334,7 +2340,8 @@ select one."
       (pcase status
         ('new
          (lab--put-comment
-          (lab--comment-content selected)
+          (concat (lab--prepare-reply-context comment)
+                  (lab--comment-content selected))
           (lambda (_beg _end input)
             (delete-overlay ov)
             (setf (lab--comment-content selected) input)
