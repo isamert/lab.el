@@ -195,19 +195,19 @@ haven't installed consult."
 
 (defcustom lab-add-comment-hook '(lab-merge-request-diff-mode-update-header)
   "Hooks to run after adding a comment.
-Called with the comment object, `lab--comment'."
+Called with the comment object, `lab--comment', might be nil in certain cases."
   :group 'lab
   :type 'hook)
 
 (defcustom lab-delete-comment-hook '(lab-merge-request-diff-mode-update-header)
   "Hooks to run after deleting a comment.
-Called with the comment object, `lab--comment'."
+Called with the comment object, `lab--comment', might be nil in certain cases."
   :group 'lab
   :type 'hook)
 
 (defcustom lab-delete-thread-hook '(lab-merge-request-diff-mode-update-header)
   "Hooks to run after removing a comment.
-Called with the comment overlay."
+Called with the comment overlay, might be nil in certain cases."
   :group 'lab
   :type 'hook)
 
@@ -1970,7 +1970,7 @@ ON-ACCEPT should return the created overlay."
        (with-current-buffer buffer
          (deactivate-mark)
          (let ((ov (funcall on-accept beg end (lab--clear-comment-input input))))
-           (seq-each (lambda (hook) (funcall hook (overlay-get ov 'lab-comment))) lab-add-comment-hook)))))))
+           (seq-each (lambda (hook) (funcall hook (when ov (overlay-get ov 'lab-comment)))) lab-add-comment-hook)))))))
 
 (defun lab--prepare-reply-context (comment)
   "Return a text containing all the COMMENTs and it's children content as markdown comment."
