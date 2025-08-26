@@ -166,6 +166,10 @@ create a merge request:
 
 [[file:https://user-images.githubusercontent.com/8031017/204106593-3acdaffc-a1a4-4115-9fd8-339d2ac3930f.png]]
 
+Here is a how a thread looks like on merge request diff view:
+
+#+HTML: <img width="800" height="490" alt="code-review" src="https://github.com/user-attachments/assets/16698d69-63ea-4847-90fc-1c0a115817e5" />
+
 * Code reviews
 
 Either use the function ~lab-open-merge-request-diff~ and give it a
