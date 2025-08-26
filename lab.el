@@ -2023,11 +2023,12 @@ This function assumes you are currently on a hunk header."
                                               `(and "diff --git "
                                                     "a/" ,old-path
                                                     " "
-                                                    "b/" ,new-path)))
+                                                    "b/" ,new-path))
+                                             nil t)
                       (point))))
         (found nil))
     (unless file-pos
-      (signal 'diff-goto-line-error (format "Path not found in diff: old_path:%s, new_path:%s" old-path new-path)))
+      (throw 'diff-goto-line-error `(path-noth-found (:old_path ,old-path :new_path ,new-path))))
     (goto-char file-pos)
     (diff-hunk-next)
     (while (not found)
@@ -2052,7 +2053,7 @@ This function assumes you are currently on a hunk header."
                                      (?\s 'same)
                                      (?+ 'new)
                                      (?- 'old)
-                                     (_ (signal 'diff-goto-line-error "Malformed diff line")))))
+                                     (_ (throw 'diff-goto-line-error '(malformed-diff-line ,(thing-at-point 'line)))))))
                     (setq current-line
                           (cond
                            ((or (eq line-type 'same)
@@ -2062,7 +2063,8 @@ This function assumes you are currently on a hunk header."
           (let ((next-hunk-pos (save-excursion (diff-hunk-next) (point))))
             (if (< next-hunk-pos boundary)
                 (goto-char next-hunk-pos)
-              (signal 'diff-goto-line-error "Line not found in this file"))))))))
+              (throw 'diff-goto-line-error '(line-not-found)))))))
+    (point)))
 
 (defun lab--format-hunk (hunk)
   (let-alist hunk
@@ -2239,44 +2241,46 @@ can call in the diff buffer.  By default it's bound to C-c ;"
                  (first-note (car notes)))
             (when (equal (alist-get 'type first-note) "DiffNote")
               (let-alist first-note
-                (let ((type (or .position.line_range.end.type
-                                (if .position.new_line "new" "old"))))
-                  (condition-case nil
-                      (progn
-                        (lab--diff-goto-line
-                         .position.old_path
-                         .position.new_path
-                         (intern type)
-                         (or (alist-get (intern (concat type "_line"))
-                                        .position.line_range.end)
-                             (alist-get (intern (concat type  "_line"))
-                                        .position)))
-                        (lab--put-comment-overlay
-                         (lab--make-comment
-                          :status 'other
-                          :placement 'top-level
-                          :id .id
-                          :thread-id (alist-get 'id thread)
-                          :beginning (point) :end (pos-eol)
-                          :username .author.username :created-at .created_at
-                          :content .body
-                          :resolved-by .resolved_by.username
-                          :resolved-at .resolved_at
-                          :children (seq-map (lambda (it)
-                                               (let-alist it
-                                                 (lab--make-comment
-                                                  :status 'other
-                                                  :placement 'reply
-                                                  :id .id
-                                                  :thread-id (alist-get 'id thread)
-                                                  :beginning (point) :end (pos-eol)
-                                                  :username .author.username
-                                                  :created-at .created_at
-                                                  :content .body
-                                                  :resolved-by .resolved_by.username
-                                                  :resolved-at .resolved_at)))
-                                             (seq-drop notes 1)))))
-                    (diff-goto-line-error (message "Skipping this diff..."))))))))
+                (let* ((type (or .position.line_range.end.type
+                                 (if .position.new_line "new" "old")))
+                       (pos (catch 'diff-goto-line-error
+                              (lab--diff-goto-line
+                               .position.old_path
+                               .position.new_path
+                               (intern type)
+                               (or (alist-get (intern (concat type "_line"))
+                                              .position.line_range.end)
+                                   (alist-get (intern (concat type  "_line"))
+                                              .position))))))
+                  (cond
+                   ((listp pos) ; can't find the line
+                    (message "lab :: Skipping the thread because it's possibly outdated. Cause: %s, Thread: %s" pos thread))
+                   ((numberp pos) ; found the correct line
+                    (lab--put-comment-overlay
+                     (lab--make-comment
+                      :status 'other
+                      :placement 'top-level
+                      :id .id
+                      :thread-id (alist-get 'id thread)
+                      :beginning (point) :end (pos-eol)
+                      :username .author.username :created-at .created_at
+                      :content .body
+                      :resolved-by .resolved_by.username
+                      :resolved-at .resolved_at
+                      :children (seq-map (lambda (it)
+                                           (let-alist it
+                                             (lab--make-comment
+                                              :status 'other
+                                              :placement 'reply
+                                              :id .id
+                                              :thread-id (alist-get 'id thread)
+                                              :beginning (point) :end (pos-eol)
+                                              :username .author.username
+                                              :created-at .created_at
+                                              :content .body
+                                              :resolved-by .resolved_by.username
+                                              :resolved-at .resolved_at)))
+                                         (seq-drop notes 1)))))))))))
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)
