@@ -3,7 +3,7 @@
 ;; Copyright (C) 2023-2025 Isa Mert Gurbuz
 
 ;; Author: Isa Mert Gurbuz <isamertgurbuz@gmail.com>
-;; Version: 3.0.0
+;; Version: 3.0.1
 ;; Homepage: https://github.com/isamert/lab.el
 ;; License: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "27.1") (request "0.3.2") (s "1.10.0") (f "0.20.0") (compat "29.1.4.4") (promise "1.1") (async-await "1.1"))
