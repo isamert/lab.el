@@ -1541,8 +1541,8 @@ VARIABLES is an alist, like:
           lab-after-merge-request-mark-ready-functions)))
    (?d "Diff & Review"
        (lab-open-merge-request-diff .web_url))
-   (?t "Threads & overview"
-       (lab-merge-request-overview .web_url))
+   ;; (?t "Threads & overview"
+   ;;     (lab-merge-request-overview .web_url))
    (?r "Rebase"
        ;; TODO add a function that rebases merge request with given
        ;; URL and write this in terms of the new function
@@ -1724,6 +1724,54 @@ MR is an object created by `lab--parse-merge-request-url'."
   (let-alist mr (format "%s!%s" (url-unhex-string .project_id) .iid)))
 
 ;;;; Code review stuff (merge requests)
+
+;;;;; Variables & lab-merge-request-diff-mode-map
+
+(defvar-local lab--merge-request-versions nil)
+(defvar-local lab--merge-request-threads nil)
+(defvar-local lab--merge-request-url nil)
+(defvar-local lab--merge-request nil)
+(defvar-local lab--merge-request-diffs nil)
+(defvar-local lab--pending-comment-count 0)
+(defvar-local lab--sent-comment-count 0)
+(defvar-local lab--current-user nil)
+(defvar lab-merge-request-history nil)
+
+(defvar lab-merge-request-diff-prefix-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'lab-new-thread)
+    (define-key map (kbd "e") #'lab-edit-thread)
+    (define-key map (kbd "r") #'lab-reply-thread)
+    (define-key map (kbd "x") #'lab-delete-thread)
+    (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
+    (define-key map (kbd "RET") #'lab-send-review)
+
+    (define-key map (kbd "]") #'lab-forward-merge-request-thread)
+    (define-key map (kbd "[") #'lab-backward-merge-request-thread)
+    (put 'lab-forward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
+    (put 'lab-backward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
+
+    (define-key map (kbd "o") #'lab-open-merge-request-on-web)
+    (define-key map (kbd "im") #'lab-inspect-merge-request)
+    (define-key map (kbd "iv") #'lab-inspect-merge-request-versions)
+    (define-key map (kbd "it") #'lab-inspect-merge-request-threads)
+    (define-key map (kbd "id") #'lab-inspect-merge-request-diffs)
+
+    map))
+
+(define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
+  "Mode for viewing and reviewing GitLab merge request."
+  :keymap lab-merge-request-diff-mode-map
+  :keymap (let ((map (make-sparse-keymap)))
+            (define-key map (kbd "C-c ;") lab-merge-request-diff-prefix-map)
+            map)
+  (setq-local
+   revert-buffer-function
+   (lambda (_ignore-auto noconfirm)
+     (cond
+      ((and (not noconfirm) (y-or-n-p "Your review progress will be lost.  Want to reload?"))
+       (lab-open-merge-request-diff lab--merge-request-url))
+      (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
 
 ;;;;; Utils
 
@@ -1973,7 +2021,7 @@ ON-ACCEPT should return the created overlay."
            (seq-each (lambda (hook) (funcall hook (when ov (overlay-get ov 'lab-comment)))) lab-add-comment-hook)))))))
 
 (defun lab--prepare-reply-context (comment)
-  "Return a text containing all the COMMENTs and it's children content as markdown comment."
+  "Extract all COMMENTs and their children as markdown comments."
   (concat
    (seq-reduce
     (lambda (acc it)
@@ -2134,53 +2182,6 @@ This function assumes you are currently on a hunk header."
     (setq-local lab--pending-comment-count pending)
     (setq-local lab--sent-comment-count sent)
     (setq-local header-line-format (substitute-command-keys (format "Review :: %s pending, %s sent comment(s)." pending sent)))))
-
-;;;;; Variables & lab-merge-request-diff-mode-map
-
-(defvar-local lab--merge-request-versions nil)
-(defvar-local lab--merge-request-threads nil)
-(defvar-local lab--merge-request-url nil)
-(defvar-local lab--merge-request nil)
-(defvar-local lab--merge-request-diffs nil)
-(defvar-local lab--pending-comment-count 0)
-(defvar-local lab--sent-comment-count 0)
-(defvar-local lab--current-user nil)
-(defvar lab-merge-request-history nil)
-
-(defvar lab-merge-request-diff-prefix-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n") #'lab-new-thread)
-    (define-key map (kbd "e") #'lab-edit-thread)
-    (define-key map (kbd "r") #'lab-reply-thread)
-    (define-key map (kbd "x") #'lab-delete-thread)
-    (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
-    (define-key map (kbd "RET") #'lab-send-review)
-
-    (define-key map (kbd "]") #'lab-forward-merge-request-thread)
-    (define-key map (kbd "[") #'lab-backward-merge-request-thread)
-    (put 'lab-forward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
-    (put 'lab-backward-merge-request-thread 'repeat-map 'lab-merge-request-diff-prefix-map)
-
-    (define-key map (kbd "o") #'lab-open-merge-request-on-web)
-    (define-key map (kbd "im") #'lab-inspect-merge-request)
-    (define-key map (kbd "iv") #'lab-inspect-merge-request-versions)
-    (define-key map (kbd "it") #'lab-inspect-merge-request-threads)
-    (define-key map (kbd "id") #'lab-inspect-merge-request-diffs)
-
-    map))
-
-(define-key lab-merge-request-diff-mode-map (kbd "C-c ;") lab-merge-request-diff-prefix-map)
-
-(define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
-  "Mode for viewing and reviewing GitLab merge request."
-  :keymap lab-merge-request-diff-mode-map
-  (setq-local
-   revert-buffer-function
-   (lambda (_ignore-auto noconfirm)
-     (cond
-      ((and (not noconfirm) (y-or-n-p "Your review progress will be lost.  Want to reload?"))
-       (lab-open-merge-request-diff lab--merge-request-url))
-      (noconfirm (lab-open-merge-request-diff lab--merge-request-url))))))
 
 ;;;;; Interactive
 
