@@ -7,6 +7,29 @@
 GitLab (managed or self-hosted). It also allows you to conduct full
 code reviews totally inside Emacs!
 
+* Contents :noexport:
+:PROPERTIES:
+:TOC:      :include siblings :depth 3 :ignore this
+:END:
+:CONTENTS:
+- [[#basics][Basics]]
+- [[#installation][Installation]]
+- [[#usage][Usage]]
+- [[#functionality-summary][Functionality summary]]
+- [[#code-reviews][Code reviews]]
+  - [[#recommended-diff-mode-setup][Recommended diff-mode setup]]
+  - [[#tips--workflow-enhancements][Tips & workflow enhancements]]
+- [[#extrastips][Extras/tips]]
+  - [[#embark-and-consult-integration][Embark and Consult integration]]
+  - [[#keybindings][Keybindings]]
+  - [[#supplemental-packages][Supplemental packages]]
+  - [[#start-watching-your-pipeline-automatically][Start watching your pipeline automatically]]
+  - [[#projectel-integration][project.el integration]]
+  - [[#org-mode-integration][org-mode integration]]
+- [[#using-as-a-gitlab-api-client][Using as a GitLab API client]]
+- [[#differences--similarities-with-forge][Differences & similarities with forge]]
+:END:
+
 * Basics
 
 ~lab.el~ is designed to make your /daily/ interactions with GitLab
@@ -459,3 +482,7 @@ Most of the time, /lab.el/ provides you an easy way to jump to related GitLab pa
 
 I believe the overall usage and focus is completely different, you need to check it out to see yourself. I may have misinformation about /forge/ on some topics I listed above, please correct me where I'm wrong.
 #+end_quote
+
+# Local Variables:
+# before-save-hook: org-make-toc
+# End:
