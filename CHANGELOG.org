@@ -1,3 +1,7 @@
+* Next
+
+- Added ~lab-after-clone-bulk-functions~.
+
 * 3.0.1
 
 - code-review: Properly handle outdated comments.

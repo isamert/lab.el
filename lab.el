@@ -90,10 +90,19 @@ Required only for functions containing `-group-' phrase."
 (defcustom lab-after-git-clone-functions
   '()
   "Functions to run after a repository is cloned.
-The `default-directory' will be the project's directory while
-calling these functions."
+The `default-directory' will be the project's directory while calling
+these functions.  These functions are not called after cloning projects
+with `lab-clone-bulk', see `lab-after-clone-bulk-functions' for that."
   :type 'hook
   :group 'lab)
+
+(defcustom lab-after-clone-bulk-functions '()
+  "Functions to run after `lab-clone-bulk' finishes.
+For example, this might be a good place to re-scan your project list.
+Functions are called without any arguments.  Also see:
+`lab-after-git-clone-functions'."
+  :group 'lab
+  :type 'hook)
 
 (defcustom lab-browse-url-fn
   #'browse-url
@@ -899,6 +908,7 @@ You can interrupt the process by calling \\[lab-interrupt]."
            (lambda (success?)
              (message "lab :: Cloning %s...%s" path (if success? "Done" "Failed!"))
              (lab--clone-bulk-helper root (seq-drop repositories 1))))))
+    (seq-each #'funcall lab-after-clone-bulk-functions)
     (message "lab :: Cloned all repositories. Check buffer %s for details." lab--git-clone-buffer-name)))
 
 (async-defun lab-pull-bulk (&optional repositories interactive?)
