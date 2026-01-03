@@ -2238,6 +2238,12 @@ can call in the diff buffer.  By default it's bound to C-c ;"
           (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
         (lab-merge-request-diff-mode)
+        (setq-local lab--merge-request-versions versions)
+        (setq-local lab--merge-request-url url)
+        (setq-local lab--merge-request mr)
+        (setq-local lab--merge-request-threads threads)
+        (setq-local lab--merge-request-diffs diffs)
+        (setq-local lab--current-user current-user)
         (remove-overlays)
         (erase-buffer)
         (seq-each
@@ -2302,13 +2308,7 @@ can call in the diff buffer.  By default it's bound to C-c ;"
                                          (seq-drop notes 1)))))))))))
         (goto-char 0)
         (read-only-mode)
-        (switch-to-buffer buffer-name)
-        (setq-local lab--merge-request-versions versions)
-        (setq-local lab--merge-request-url url)
-        (setq-local lab--merge-request mr)
-        (setq-local lab--merge-request-threads threads)
-        (setq-local lab--merge-request-diffs diffs)
-        (setq-local lab--current-user current-user)))))
+        (switch-to-buffer buffer-name)))))
 
 (defun lab-new-thread ()
   "Create a new thread at the current line."
