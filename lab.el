@@ -2196,7 +2196,42 @@ This function assumes you are currently on a hunk header."
          (pending (length (alist-get 'new all))))
     (setq-local lab--pending-comment-count pending)
     (setq-local lab--sent-comment-count sent)
-    (setq-local header-line-format (substitute-command-keys (format "Review :: %s pending, %s sent comment(s)." pending sent)))))
+    (let-alist lab--merge-request
+      (setq-local
+       header-line-format
+       (substitute-command-keys
+        (format "%s MR :: %s (%s) │ Review :: %s pending, %s sent │ \\[lab-open-merge-request-on-web] → Open in browser, \\[lab-approve-merge-request] → Approve, \\[lab-unapprove-merge-request] → Unapprove, \\[lab-send-review] → Send, \\[lab-new-thread] → New thread, \\[lab-reply-thread] → Reply thread, ..."
+                (pcase .state
+                  ("opened" "🟢")
+                  ("closed" "🔴")
+                  ("merged" "🟣")
+                  ("locked" "🔒"))
+                (s-truncate 50 .title)
+                (pcase .detailed_merge_status
+                  ("approvals_syncing"          "🔄 Syncing approvals")
+                  ("checking"                   "🔎 Running checks")
+                  ("ci_must_pass"               "✅ CI must pass before merge")
+                  ("ci_still_running"           "⏳ CI running")
+                  ("commits_status"             "🔍 Checking commit status")
+                  ("conflict"                   "⚔️ Merge conflicts")
+                  ("discussions_not_resolved"   "💬 Unresolved discussions")
+                  ("draft_status"               "📝 Draft MR")
+                  ("jira_association_missing"   "📌 Jira ticket not linked")
+                  ("mergeable"                  "🟢 Ready to merge")
+                  ("merge_request_blocked"      "🚫 Blocked")
+                  ("merge_time"                 "⏱ Waiting for scheduled merge time")
+                  ("need_rebase"                "♻️ Needs rebase")
+                  ("not_approved"               "🙅 Not enough approvals")
+                  ("not_open"                   "🚪 MR is closed / not open")
+                  ("preparing"                  "⚙️ Preparing to merge")
+                  ("requested_changes"          "✏️ Changes requested")
+                  ("security_policy_violations" "🛡 Security policy violations")
+                  ("status_checks_must_pass"    "☑️ Status checks must pass")
+                  ("unchecked"                  "❓ Merge checks not run yet")
+                  ("locked_paths"               "🔒 Locked file paths block merge")
+                  ("locked_lfs_files"           "🔒 Locked LFS files block merge")
+                  ("title_regex"                "🏷 Title does not match required pattern"))
+                pending sent))))))
 
 ;;;;; Interactive
 
@@ -2537,7 +2572,8 @@ select one."
                                  (other (error "lab.el :: Not a known placement: %s" other)))))))
       (pcase-dolist (`(,comment . ,payload) payloads)
         (apply #'lab--request payload)
-        (setf (lab--comment-status comment) 'sent))))
+        (setf (lab--comment-status comment) 'sent)))
+    (message "lab :: Sending review...Done"))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
 (defun lab-open-merge-request-on-web ()
