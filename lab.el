@@ -2200,7 +2200,28 @@ This function assumes you are currently on a hunk header."
 
 ;;;;; Interactive
 
-;; TODO: Convert this to async-defun
+(async-defun lab--fetch-mr-data (url)
+  (let ((mr (lab--parse-merge-request-url url)))
+    (let-alist mr
+      (let ((mr-p (lab--request-promise (format "projects/%s/merge_requests/%s" .project_id .iid)))
+            (threads-p (lab--request-promise
+                        (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
+                        :%collect-all? t))
+            ;; FIXME: needs :%collect-all? t but this endpoint does
+            ;; not support keyset pagination (and keyset pagination in
+            ;; general is getting rolled out), so I need to update
+            ;; lab--request and here. See:
+            ;; https://docs.gitlab.com/api/rest/#pagination
+            (diffs-p (lab--request-promise
+                      (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)))
+            (versions-p (lab--request-promise
+                         (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
+        (list
+         (map-merge 'list (await mr-p) mr)
+         (await threads-p)
+         (await diffs-p)
+         (await versions-p))))))
+
 ;;;###autoload
 (defun lab-open-merge-request-diff (url)
   "Open a diff buffer for given merge request URL.
@@ -2208,29 +2229,11 @@ In this buffer you can use the following functions: See the
 `lab-merge-request-diff-prefix-map' for all the possible functions you
 can call in the diff buffer.  By default it's bound to C-c ;"
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
-  (let* ((mr (lab--parse-merge-request-url url))
-         (threads (let-alist mr
-                    (lab--request
-                     (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                     :%collect-all? t)))
-         (diffs
-          ;; GET /projects/:id/merge_requests/:merge_request_iid/raw_diffs
-          ;; ^ This retrieves the raw diff directly but it's added on GitLab v17.9
-          (let-alist mr
-            ;; FIXME: needs :%collect-all? t but this endpoint does
-            ;; not support keyset pagination (and keyset pagination in
-            ;; general is getting rolled out), so I need to update
-            ;; lab--request and here. See:
-            ;; https://docs.gitlab.com/api/rest/#pagination
-            (lab--request
-             (format "projects/%s/merge_requests/%s/diffs" .project_id .iid))))
-         (versions
-          (let-alist mr
-            (lab--request
-             (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
-         ;; Current user is needed to determine which comments are editable/deletable by us
-         ;; Caching this into a local var so we don't need to request it everytime
-         (current-user (alist-get 'username (lab-user))))
+  (pcase-let* ((`(,mr ,threads ,diffs ,versions)
+                (promise-wait-value (promise-wait 10 (lab--fetch-mr-data url))))
+               ;; Current user is needed to determine which comments are editable/deletable by us
+               ;; Caching this into a local var so we don't need to request it everytime
+               (current-user (alist-get 'username (lab-user))))
     (let ((inhibit-read-only t)
           (buffer-name (format "*lab-diff: %s*" (lab--pretty-mr-name mr))))
       (with-current-buffer (get-buffer-create buffer-name)
