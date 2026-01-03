@@ -1068,9 +1068,9 @@ Example:
                          :false-object nil))
               :success (cl-function (lambda (&key data &allow-other-keys) (funcall on-success data)))
               :error (cl-function
-                      (lambda (&rest rest &key data &allow-other-keys)
+                      (lambda (&rest rest &key data response &allow-other-keys)
                         (if %error
-                            (funcall %error data)
+                            (funcall %error data response)
                           (error ">> lab--request failed with %s, detailed info: %s"
                                  data rest))))
               :sync (not %success) ;; Only sync if no user callback
@@ -1127,7 +1127,7 @@ Example:
        params
        (list
         :%success (lambda (data) (funcall resolve data))
-        :%error (lambda (data) (funcall reject data))))))))
+        :%error (lambda (data _) (funcall reject data))))))))
 
 (defun lab--open-web-url (url)
   (kill-new url)
@@ -1167,7 +1167,7 @@ ON-ERROR, if provided, handles errors."
    :include_subgroups 'true
    :%collect-all? t
    :%success on-success
-   :%error on-error))
+   :%error (lambda (data _) (funcall on-error data))))
 
 ;;;###autoload
 (defun lab-list-all-group-projects (&optional group)
@@ -1190,7 +1190,7 @@ ON-ERROR, if provided, handles errors."
    :owned 'true
    :%collect-all? t
    :%success on-success
-   :%error on-error))
+   :%error (lambda (data _) (funcall on-error data))))
 
 ;;;###autoload
 (defun lab-list-all-owned-projects ()
@@ -2385,7 +2385,7 @@ select one."
                            (message "lab :: Editing...Done")
                            (delete-overlay ov)
                            (lab--put-comment-overlay comment))
-               :%error (lambda (err)
+               :%error (lambda (err _)
                          (message "lab :: Failed to edit thread: %s" err)))))))))))
 
 (defun lab-delete-thread (ov)
@@ -2438,7 +2438,7 @@ select one."
                              ((not (equal selected comment))
                               (lab--put-comment-overlay comment)))
                             (message "lab :: Deleted the comment")))
-              :%error (lambda (err)
+              :%error (lambda (err _)
                         (message "lab :: Failed to delete the comment: %s" err))))))
         (seq-each (lambda (hook) (funcall hook comment)) lab-delete-comment-hook)))))
 
@@ -2467,7 +2467,7 @@ select one."
                              (setf (lab--comment-resolved-at comment) nil)
                              (delete-overlay ov)
                              (lab--put-comment-overlay comment))
-                 :%error (lambda (data)
+                 :%error (lambda (data _)
                            (message "lab :: Failed to resolve the thread due to %s" data)))))
       (_ (error "Not implemented")))))
 
@@ -2496,7 +2496,7 @@ select one."
                              (setf (lab--comment-resolved-at comment) nil)
                              (delete-overlay ov)
                              (lab--put-comment-overlay comment))
-                 :%error (lambda (data)
+                 :%error (lambda (data _)
                            (message "lab :: Failed to reopen the thread due to %s" data)))))
       (_ (error "Not implemented")))))
 
