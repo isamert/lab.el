@@ -1749,6 +1749,9 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 (defvar lab-merge-request-diff-prefix-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'lab-approve-merge-request)
+    (define-key map (kbd "u") #'lab-unapprove-merge-request)
+
     (define-key map (kbd "n") #'lab-new-thread)
     (define-key map (kbd "e") #'lab-edit-thread)
     (define-key map (kbd "r") #'lab-reply-thread)
@@ -2563,6 +2566,25 @@ select one."
           (goto-char (overlay-start prev))
           (seq-each #'funcall lab-jump-to-thread-hook))
       (user-error "No more threads/comments behind"))))
+
+(defun lab-approve-merge-request ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let-alist lab--merge-request
+    (lab--request
+     (format "projects/%s/merge_requests/%s/approve" .project_id .iid)
+     :%type "POST"
+     :%error (lambda (data response)
+               (if (= 409 (request-response-status-code response))
+                   (message (substitute-command-keys "lab :: You are currently on an older version of this MR, refresh (\\[revert-buffer]) and then try to approve"))
+                 (message "lab :: Failed to approve: %s" data)))
+     :sha (let-alist (car lab--merge-request-versions) .head_commit_sha))))
+
+(defun lab-unapprove-merge-request ()
+  (interactive nil lab-merge-request-diff-mode)
+  (let-alist lab--merge-request
+    (lab--request
+     (format "projects/%s/merge_requests/%s/unapprove" .project_id .iid)
+     :%type "POST")))
 
 ;;;;;; Interactive helpers
 
