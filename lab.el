@@ -1772,12 +1772,14 @@ MR is an object created by `lab--parse-merge-request-url'."
 
     map))
 
+(defvar lab-merge-request-diff-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c ;") lab-merge-request-diff-prefix-map)
+    map))
+
 (define-derived-mode lab-merge-request-diff-mode diff-mode "LabMRDiff"
   "Mode for viewing and reviewing GitLab merge request."
   :keymap lab-merge-request-diff-mode-map
-  :keymap (let ((map (make-sparse-keymap)))
-            (define-key map (kbd "C-c ;") lab-merge-request-diff-prefix-map)
-            map)
   (setq-local
    revert-buffer-function
    (lambda (_ignore-auto noconfirm)
