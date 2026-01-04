@@ -44,6 +44,7 @@
 (require 'f)
 (require 'vc-git)
 (require 'request)
+(require 'url-util)
 (require 'ansi-color)
 (require 'async-await)
 (require 'promise)
@@ -1043,7 +1044,7 @@ Example:
    :%collect-all t)"
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
   (let* ((token (lab--retrieve-token))
-         (request-url
+         (base-url
           (thread-last
             (if (s-prefix? "http" endpoint)
                 endpoint
@@ -1052,10 +1053,26 @@ Example:
             (s-replace-regexp "#{project}" (lambda (&rest _)
                                              (or (ignore-errors (lab--project-path))
                                                  (user-error "You are not in a valid git project"))))))
+         (initial-params
+          `(,@(when %collect-all?
+                `(("per_page" . ,lab--max-per-page-result-count)
+                  ("pagination" . "offset")))
+            ,@(unless %collect-all?
+                `(("per_page" . ,lab-result-count)))
+            ,@(lab--plist-to-alist params)
+            ,@%params))
+         (initial-url
+          (concat base-url
+                  (when initial-params
+                    (concat "?"
+                            (url-build-query-string
+                             (cl-loop for (k . v) in initial-params
+                                      when v
+                                      collect (list k v)))))))
          (make-request
-          (lambda (lastid on-success)
+          (lambda (url on-success)
             (request
-              request-url
+              url
               :type %type
               :headers `((Authorization . ,(format "Bearer %s" token)) ,@%headers)
               :parser (if %raw?
@@ -1066,52 +1083,56 @@ Example:
                          :array-type 'list
                          :null-object nil
                          :false-object nil))
-              :success (cl-function (lambda (&key data &allow-other-keys) (funcall on-success data)))
-              :error (cl-function
-                      (lambda (&rest rest &key data response &allow-other-keys)
-                        (if %error
-                            (funcall %error data response)
-                          (error ">> lab--request failed with %s, detailed info: %s"
-                                 data rest))))
-              :sync (not %success) ;; Only sync if no user callback
-              :data (if (plistp %data) (lab--plist-to-alist %data) %data)
-              :params
-              `(,@(when %collect-all?
-                    `(("per_page" . ,lab--max-per-page-result-count) ("order_by" . "id") ("sort" . "asc") ("pagination" . "keyset")))
-                ,@(when (and %collect-all? (not (eq lastid t)))
-                    `(("id_after" . ,lastid)))
-                ,@(unless %collect-all?
-                    `(("per_page" . ,lab-result-count)))
-                ,@(lab--plist-to-alist params) ,@%params)))))
+              :success
+              (cl-function
+               (lambda (&key data response &allow-other-keys)
+                 (funcall on-success data response)))
+              :error
+              (cl-function
+               (lambda (&rest rest &key data response &allow-other-keys)
+                 (message ">> lab--request failed with %s, for url=%s detailed info: %s"
+                          data url rest)
+                 (if %error
+                     (funcall %error data response)
+                   (error ">> lab--request failed with %s, detailed info: %s"
+                          data rest))))
+              :sync (not %success)
+              :data (if (plistp %data)
+                        (lab--plist-to-alist %data)
+                      %data)))))
+
     (cond
+     ;; async + collect-all
      ((and %success %collect-all?)
       (let (acc)
         (cl-labels
-            ((step (lastid)
-                   (funcall make-request lastid
-                            (lambda (data)
+            ((step (url)
+                   (funcall make-request url
+                            (lambda (data response)
                               (setq acc (append acc data))
-                              (let ((len (length data))
-                                    (newid (alist-get 'id (lab-last-item data))))
-                                (if (and (= len lab--max-per-page-result-count) newid)
-                                    (step newid)
+                              (let ((next-url (lab--link-next
+                                               (request-response-header response "link"))))
+                                (if next-url
+                                    (step next-url)
                                   (funcall %success acc)))))))
-          (step t))))
+          (step initial-url))))
+     ;; sync + collect-all
      ((and (not %success) %collect-all?)
       (let ((all-items '())
-            (lastid t))
-        (while lastid
-          (funcall
-           make-request lastid
-           (lambda (data)
-             (setq lastid (when (lab--length= data lab--max-per-page-result-count)
-                            (alist-get 'id (lab-last-item data))))
-             (setq all-items (append all-items data)))))
+            (next-url initial-url))
+        (while next-url
+          (funcall make-request next-url
+                   (lambda (data response)
+                     (setq all-items (append all-items data))
+                     (setq next-url
+                           (lab--link-next
+                            (request-response-header response "link"))))))
         all-items))
+     ;; non-collect-all
      (t
       (let ((json nil))
-        (funcall make-request t
-                 (lambda (data)
+        (funcall make-request initial-url
+                 (lambda (data _response)
                    (setq json data)
                    (when %success
                      (funcall %success data))))
@@ -1128,6 +1149,12 @@ Example:
        (list
         :%success (lambda (data) (funcall resolve data))
         :%error (lambda (data _) (funcall reject data))))))))
+
+(defun lab--link-next (link-header)
+  "Return URL with rel=\"next\" from LINK-HEADER, or nil."
+  (when (and link-header
+             (string-match "<\\([^>]+\\)>;[[:space:]]*rel=\"next\"" link-header))
+    (match-string 1 link-header)))
 
 (defun lab--open-web-url (url)
   (kill-new url)
@@ -2242,13 +2269,13 @@ This function assumes you are currently on a hunk header."
             (threads-p (lab--request-promise
                         (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
                         :%collect-all? t))
-            ;; FIXME: needs :%collect-all? t but this endpoint does
-            ;; not support keyset pagination (and keyset pagination in
-            ;; general is getting rolled out), so I need to update
-            ;; lab--request and here. See:
-            ;; https://docs.gitlab.com/api/rest/#pagination
             (diffs-p (lab--request-promise
-                      (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)))
+                      (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)
+                      :%collect-all? t
+                      ;; Maxing per_page usually ended up with HTTP
+                      ;; 500 in my tests. Hence I'm keeping it at the
+                      ;; default value for this endpoint
+                      :per_page 20))
             (versions-p (lab--request-promise
                          (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
         (list
