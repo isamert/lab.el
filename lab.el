@@ -2249,7 +2249,7 @@ This function assumes you are currently on a hunk header."
                   ("merge_time"                 "⏱ Waiting for scheduled merge time")
                   ("need_rebase"                "♻️ Needs rebase")
                   ("not_approved"               "🙅 Not enough approvals")
-                  ("not_open"                   "🚪 MR is closed / not open")
+                  ("not_open"                   "🚪 Closed")
                   ("preparing"                  "⚙️ Preparing to merge")
                   ("requested_changes"          "✏️ Changes requested")
                   ("security_policy_violations" "🛡 Security policy violations")
