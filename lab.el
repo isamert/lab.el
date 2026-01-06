@@ -2643,6 +2643,8 @@ select one."
     (lab--request
      (format "projects/%s/merge_requests/%s/approve" .project_id .iid)
      :%type "POST"
+     :%success (lambda (_)
+                 (message "lab :: Approved"))
      :%error (lambda (data response)
                (if (= 409 (request-response-status-code response))
                    (message (substitute-command-keys "lab :: You are currently on an older version of this MR, refresh (\\[revert-buffer]) and then try to approve"))
@@ -2654,6 +2656,8 @@ select one."
   (let-alist lab--merge-request
     (lab--request
      (format "projects/%s/merge_requests/%s/unapprove" .project_id .iid)
+     :%success (lambda (_)
+                 (message "lab :: Unapproved"))
      :%type "POST")))
 
 ;;;;;; Interactive helpers
