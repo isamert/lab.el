@@ -1784,6 +1784,11 @@ MR is an object created by `lab--parse-merge-request-url'."
     (define-key map (kbd "r") #'lab-reply-thread)
     (define-key map (kbd "x") #'lab-delete-thread)
     (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
+    (define-key map (kbd "TAB") #'lab-toggle-thread-at-point)
+    (define-key map (kbd "c") #'lab-collapse-thread-at-point)
+    (define-key map (kbd "E") #'lab-expand-thread-at-point)
+    (define-key map (kbd "C") #'lab-collapse-thread-all)
+    (define-key map (kbd "M-E") #'lab-expand-thread-all)
     (define-key map (kbd "RET") #'lab-send-review)
 
     (define-key map (kbd "]") #'lab-forward-merge-request-thread)
@@ -2345,31 +2350,33 @@ can call in the diff buffer.  By default it's bound to C-c ;"
                    ((listp pos) ; can't find the line
                     (message "lab :: Skipping the thread because it's possibly outdated. Cause: %s, Thread: %s" pos thread))
                    ((numberp pos) ; found the correct line
-                    (lab--put-comment-overlay
-                     (lab--make-comment
-                      :status 'other
-                      :placement 'top-level
-                      :id .id
-                      :thread-id (alist-get 'id thread)
-                      :beginning (point) :end (pos-eol)
-                      :username .author.username :created-at .created_at
-                      :content .body
-                      :resolved-by .resolved_by.username
-                      :resolved-at .resolved_at
-                      :children (seq-map (lambda (it)
-                                           (let-alist it
-                                             (lab--make-comment
-                                              :status 'other
-                                              :placement 'reply
-                                              :id .id
-                                              :thread-id (alist-get 'id thread)
-                                              :beginning (point) :end (pos-eol)
-                                              :username .author.username
-                                              :created-at .created_at
-                                              :content .body
-                                              :resolved-by .resolved_by.username
-                                              :resolved-at .resolved_at)))
-                                         (seq-drop notes 1)))))))))))
+                    (let ((ov (lab--put-comment-overlay
+                               (lab--make-comment
+                                :status 'other
+                                :placement 'top-level
+                                :id .id
+                                :thread-id (alist-get 'id thread)
+                                :beginning (point) :end (pos-eol)
+                                :username .author.username :created-at .created_at
+                                :content .body
+                                :resolved-by .resolved_by.username
+                                :resolved-at .resolved_at
+                                :children (seq-map (lambda (it)
+                                                     (let-alist it
+                                                       (lab--make-comment
+                                                        :status 'other
+                                                        :placement 'reply
+                                                        :id .id
+                                                        :thread-id (alist-get 'id thread)
+                                                        :beginning (point) :end (pos-eol)
+                                                        :username .author.username
+                                                        :created-at .created_at
+                                                        :content .body
+                                                        :resolved-by .resolved_by.username
+                                                        :resolved-at .resolved_at)))
+                                                   (seq-drop notes 1))))))
+                      (when .resolved_by.username
+                        (lab-collapse-thread-at-point ov))))))))))
         (goto-char 0)
         (read-only-mode)
         (switch-to-buffer buffer-name)))))
@@ -2585,6 +2592,79 @@ select one."
     (if (lab--comment-resolved-by comment)
         (lab-unresolve-thread ov)
       (lab-resolve-thread ov))))
+
+(defun lab--thread-collapsed? (ov)
+  "Check if the thread overlay OV is collapsed."
+  (overlay-get ov 'lab-thread-collapsed))
+
+(defun lab-collapse-thread-at-point (ov)
+  "Collapse the thread at point.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when ov
+    (let* ((comment (overlay-get ov 'lab-comment))
+           (bar (propertize "┃" 'face '(:foreground "DimGray")))
+           (header (lab--make-comment-header comment))
+           (collapsed-text (concat "\n"
+                                   (lab--spacer :pre "┏" :header header)
+                                   (propertize (concat bar " [collapsed]")
+                                               'face '(:inherit default :extend t :foreground "DimGray"))
+                                   "\n"
+                                   (lab--spacer :pre "┗"))))
+      ;; Store the original text for later expansion
+      (unless (lab--thread-collapsed? ov)
+        (overlay-put ov 'lab-thread-original-text (overlay-get ov 'after-string))
+        (overlay-put ov 'lab-thread-collapsed t)
+        (overlay-put ov 'after-string collapsed-text)))))
+
+(defun lab-expand-thread-at-point (ov)
+  "Expand the collapsed thread at point.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when (and ov (lab--thread-collapsed? ov))
+    (let ((original-text (overlay-get ov 'lab-thread-original-text)))
+      (overlay-put ov 'lab-thread-collapsed nil)
+      (overlay-put ov 'lab-thread-original-text nil)
+      (overlay-put ov 'after-string original-text))))
+
+(defun lab-toggle-thread-at-point (ov)
+  "Toggle collapse/expand state of the thread at point.
+
+OV is the overlay containing the \\='lab-comment object.  When called
+interactively, it's automatically selected from the current line.  If
+the current line contains multiple threads, then you'll prompted to
+select one."
+  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+  (when ov
+    (if (lab--thread-collapsed? ov)
+        (lab-expand-thread-at-point ov)
+      (lab-collapse-thread-at-point ov))))
+
+(defun lab-collapse-thread-all ()
+  "Collapse all threads in the current buffer."
+  (interactive nil lab-merge-request-diff-mode)
+  (save-excursion
+    (dolist (ov (lab--all-comment-overlays-in-buffer))
+      (unless (lab--thread-collapsed? ov)
+        (lab-collapse-thread-at-point ov))))
+  (message "All threads collapsed"))
+
+(defun lab-expand-thread-all ()
+  "Expand all collapsed threads in the current buffer."
+  (interactive nil lab-merge-request-diff-mode)
+  (save-excursion
+    (dolist (ov (lab--all-comment-overlays-in-buffer))
+      (when (lab--thread-collapsed? ov)
+        (lab-expand-thread-at-point ov))))
+  (message "All threads expanded"))
 
 (defun lab-send-review ()
   "Send the pending comments to the server."
