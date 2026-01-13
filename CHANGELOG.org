@@ -1,6 +1,19 @@
-* Next
+* 3.5.0
 
-- Added ~lab-after-clone-bulk-functions~.
+- Bunch of merge request review improvements:
+  - Faster loading of merge requests by paralleling requests made to GitLab.
+  - Fix bindings. See ~lab-merge-request-diff-mode-map~ for all bindings you can use.
+  - Small iterations on design. More useful information on the buffer header (like the MR title, merge status, MR status, common command bindings etc.).
+  - Add echo-line notifications for some operations (like approving an MR etc.)
+  - Add collapse/expand functionality for threads in the buffer. Resolved threads are collapsed by default now. See these new functions:
+    - ~lab-toggle-thread-at-point~
+    - ~lab-collapse-thread-at-point~
+    - ~lab-expand-thread-at-point~
+    - ~lab-collapse-thread-all~
+    - ~lab-expand-thread-all~
+  - Other various fixes.
+- Add ~lab-after-clone-bulk-functions~. This hook lets you automatically run a function after bulk clone operations. It might be useful, for instance, updating your project list after bulk cloning repositories.
+- Better error handling.
 
 * 3.0.1
 
