@@ -269,7 +269,7 @@ very long comments."
   :type 'boolean
   :group 'lab)
 
-(defcustom lab-merge-request-diff-spacer-length (+ 7 fill-column)
+(defcustom lab-merge-request-diff-spacer-length (+ 15 fill-column)
   "The length of the spacer used in the lab merge request diff.
 This value determines how many characters wide the spacer is in the
 diff display."
@@ -1957,12 +1957,12 @@ If nil, then formatted as \"now\".")
       (if header? " " "")
       header
       (if header? " " "")
-      (make-string (- lab-merge-request-diff-spacer-length
-                      (+ (length pre)
-                         (if header?
-                             2 ; two spaces around the header
-                           0)
-                         (length header)))
+      (make-string (max 0 (- lab-merge-request-diff-spacer-length
+                             (+ (length pre)
+                                (if header?
+                                    2 ; two spaces around the header
+                                  0)
+                                (length header))))
                    ?\━)
       (if header? "\n" ""))
      'face `(:inherit default :foreground "DimGray" :extend t))))
