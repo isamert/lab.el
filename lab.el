@@ -307,6 +307,8 @@ diff display."
 # Comments lines like this are skipped.
 ")
 
+(defconst lab--promise-timeout 10)
+
 (defvar lab--user-input-history (make-hash-table :test #'equal)
   "History for user inputs.")
 
@@ -2225,14 +2227,16 @@ This function assumes you are currently on a hunk header."
   (let* ((all (seq-group-by #'lab--comment-status
                             (lab--all-comments-in-buffer)))
          (sent (length (alist-get 'sent all)))
-         (pending (length (alist-get 'new all))))
-    (setq-local lab--pending-comment-count pending)
-    (setq-local lab--sent-comment-count sent)
+         (pending (length (alist-get 'new all)))
+         (mr-review? (derived-mode-p 'lab-merge-request-diff-mode)))
+    (when mr-review?
+      (setq-local lab--pending-comment-count pending)
+      (setq-local lab--sent-comment-count sent))
     (let-alist lab--merge-request
       (setq-local
        header-line-format
        (substitute-command-keys
-        (format "%s MR :: %s (%s) │ Review :: %s pending, %s sent │ \\[lab-open-merge-request-on-web] → Open in browser, \\[lab-approve-merge-request] → Approve, \\[lab-unapprove-merge-request] → Unapprove, \\[lab-send-review] → Send, \\[lab-new-thread] → New thread, \\[lab-reply-thread] → Reply thread, ..."
+        (format "%s MR :: %s (%s) %s"
                 (pcase .state
                   ("opened" "🟢")
                   ("closed" "🔴")
@@ -2263,7 +2267,9 @@ This function assumes you are currently on a hunk header."
                   ("locked_paths"               "🔒 Locked file paths block merge")
                   ("locked_lfs_files"           "🔒 Locked LFS files block merge")
                   ("title_regex"                "🏷 Title does not match required pattern"))
-                pending sent))))))
+                (if mr-review?
+                    (format "│ Review :: %s pending, %s sent │ \\[lab-open-merge-request-on-web] → Open in browser, \\[lab-approve-merge-request] → Approve, \\[lab-unapprove-merge-request] → Unapprove, \\[lab-send-review] → Send, \\[lab-new-thread] → New thread, \\[lab-reply-thread] → Reply thread, ..." pending sent)
+                  "")))))))
 
 ;;;;; Interactive
 
@@ -2297,7 +2303,7 @@ In this buffer you can use the following functions: See the
 can call in the diff buffer.  By default it's bound to C-c ;"
   (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
   (pcase-let* ((`(,mr ,threads ,diffs ,versions)
-                (promise-wait-value (promise-wait 10 (lab--fetch-mr-data url))))
+                (promise-wait-value (promise-wait lab--promise-timeout (lab--fetch-mr-data url))))
                ;; Current user is needed to determine which comments are editable/deletable by us
                ;; Caching this into a local var so we don't need to request it everytime
                (current-user (alist-get 'username (lab-user))))
@@ -2773,6 +2779,154 @@ or if you want to see information that is not exposed in the merge
 request diff interface."
   (interactive nil lab-merge-request-diff-mode)
   (lab--inspect-obj lab--merge-request-diffs))
+
+;;;; Merge request overview
+
+(declare-function org-fold-hide-sublevels "org-fold")
+(declare-function org-fold-hide-drawer-all "org-fold")
+
+(defun lab-merge-request-overview (url)
+  "Display merge request threads with diffs and notes in an org-mode buffer.
+
+Fetches merge request versions, threads, and their associated diff notes
+from a GitLab merge request URL.  Shows the threads with individual
+notes and diff notes, formatting the diffs as org-mode source blocks.
+Marks resolvable threads as TODO or DONE based on their resolved status,
+and includes author information and timestamps."
+  (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
+  (let ((mr (lab--parse-merge-request-url url)))
+    (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
+      (erase-buffer)
+      (pcase-let*
+          ;; TODO: Do not fetch _diffs somehow
+          ((`(,mr-info ,mr-threads ,_diffs ,mr-versions)
+            (promise-wait-value (promise-wait lab--promise-timeout (lab--fetch-mr-data url))))
+           (diff-positions (thread-last
+                             mr-threads
+                             (seq-map (lambda (thread) (car (alist-get 'notes thread))))
+                             (seq-filter (lambda (note) (equal "DiffNote" (alist-get 'type note))))
+                             (seq-map (lambda (note) (map-insert (alist-get 'position note) 'comment_id (alist-get 'id note))))))
+           (diff-versions (delete-dups
+                           (seq-map
+                            (lambda (diff-pos)
+                              (alist-get 'id (lab--find-mr-version-for-diff-pos diff-pos mr-versions)))
+                            diff-positions)))
+           (diff-versions-map
+            (thread-last
+              diff-versions
+              (seq-map
+               (lambda (diff-version)
+                 (let-alist mr
+                   (lab--request-promise
+                    (format "projects/%s/merge_requests/%s/versions/%s" .project_id .iid diff-version)))))
+              (promise-all)
+              (promise-wait lab--promise-timeout)
+              (promise-wait-value)
+              (seq-map-indexed (lambda (elt idx) (cons (nth idx diff-versions) elt))))))
+        (let-alist mr-info
+          (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
+          (insert (format "[[%s][Open at web]] | " url))
+          (insert (format "[[elisp:(lab-open-merge-request-diff \"%s\")][Diff & review]] | " url))
+          (insert (format "[[elisp:(lab-merge-request-overview \"%s\")][Refresh]]" url))
+          (insert "\n\n-----\n\n")
+          (insert (format "- MR :: %s → %s, by %s\n" .source_branch .target_branch (lab--format-gitlab-author-org .author)))
+          (insert "- Last pipeline :: " (s-trim (lab--format-pipeline .head_pipeline)))
+          (insert "\n\n")
+          (insert ":DESCRIPTION:\n"
+                  (s-trim (lab--convert-md-to-org .description))
+                  "\n:END:"
+                  "\n\n"))
+        (dolist (thread mr-threads)
+          (let* ((invidual? (alist-get 'individual_note thread))
+                 (first-note (car (alist-get 'notes thread))))
+            (if invidual?
+                (let-alist first-note
+                  (pcase-let* ((`(,first-line ,rest)
+                                (s-split-up-to "\n" (lab--convert-md-to-org .body) 1)))
+                    (insert "* " (lab--format-gitlab-author-org .author) ": " first-line "\n")
+                    (insert ":PROPERTIES:" "\n"
+                            ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
+                            ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
+                            ":END:" "\n"
+                            (or rest "")
+                            "\n")))
+              (insert "*"
+                      (pcase (list (alist-get 'resolvable first-note)
+                                   (alist-get 'resolved first-note))
+                        ('(t t) " DONE")
+                        ('(t nil) " TODO")
+                        (_ ""))
+                      " " (lab--format-gitlab-author-org (alist-get 'author first-note)) ": created a thread"
+                      "\n")
+              (insert ":PROPERTIES:" "\n"
+                      ":ID: " (alist-get 'id thread) "\n"
+                      ":END:" "\n")
+              (seq-do-indexed
+               (lambda (note idx)
+                 (let-alist note
+                   (when (and (equal .type "DiffNote") (eq idx 0))
+                     (let* ((mr-ver (alist-get 'id (lab--find-mr-version-for-diff-pos .position mr-versions)))
+                            (diff-ver (alist-get mr-ver diff-versions-map)))
+                       (insert "** Diff: =" (or
+                                             (alist-get 'new_path .position)
+                                             (alist-get 'old_path .position))
+                               "=\n")
+                       (insert "#+begin_src diff\n")
+                       (insert (lab--format-hunk
+                                (seq-find
+                                 (lambda (diff)
+                                   (and
+                                    (equal (alist-get 'old_path diff) (alist-get 'old_path .position))
+                                    (equal (alist-get 'new_path diff) (alist-get 'new_path .position))))
+                                 (alist-get 'diffs diff-ver))))
+                       (insert "\n#+end_src\n\n")))
+                   (let ((created-at (lab--format-gitlab-datetime .created_at))
+                         (updated-at (lab--format-gitlab-datetime .updated_at)))
+                     (insert "** " (lab--format-gitlab-author-org .author)
+                             ", on " "[" created-at "]"
+                             (if (not (equal created-at updated-at))
+                                 (concat ", " "edited on [" updated-at "]")
+                               "")
+                             "\n"))
+                   (insert "#+begin_src markdown :id " (number-to-string .id) "\n" .body "\n" "#+end_src" "\n\n")))
+               (alist-get 'notes thread)))))
+        (org-mode)
+        (org-fold-hide-drawer-all)
+        (org-fold-hide-sublevels 1)
+        (goto-char (point-min))
+        (setq-local lab--merge-request-url url)
+        (setq-local lab--merge-request mr-info)
+        (setq-local lab--merge-request-versions mr-versions)
+        (setq-local lab--merge-request-threads mr-threads)
+        (lab-merge-request-diff-mode-update-header)
+        (switch-to-buffer (current-buffer))))))
+
+(defun lab--format-gitlab-author-org (author)
+  (let-alist author
+    (concat "[[" .web_url "][" .username "]]" )))
+
+(defun lab--format-gitlab-datetime (datetime)
+  (format-time-string "%Y-%m-%d %a %H:%M" (date-to-time datetime)))
+
+(defun lab--find-mr-version-for-diff-pos (diff-pos mr-versions)
+  (seq-find
+   (lambda (mr-ver)
+     (and (equal (alist-get 'base_sha diff-pos) (alist-get 'base_commit_sha mr-ver))
+          (equal (alist-get 'start_sha diff-pos) (alist-get 'start_commit_sha mr-ver))
+          (equal (alist-get 'head_sha diff-pos) (alist-get 'head_commit_sha mr-ver))))
+   mr-versions))
+
+(defun lab--convert-md-to-org (body)
+  "Convert markdown BODY to Org.
+This only does what's required for the merge request thread messages,
+very simple conversion."
+  (thread-last
+    (s-replace-regexp "<[^>]+>" "" body)
+    (s-replace-regexp "`\\([^`\n]+\\)`" "~\\1~")
+    (s-replace-regexp "\\*\\*\\([^\\*\n]+\\)\\*\\*" "/\\1/")
+    (replace-regexp-in-string
+     "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
+     (format "[[%s/\\2][\\1]]" lab-host))))
 
 ;;;; TODOs:
 
