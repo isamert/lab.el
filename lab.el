@@ -2400,17 +2400,13 @@ can call in the diff buffer.  By default it's bound to C-c ;"
                              :username "<you>"
                              :content input))))))
 
-(defun lab-reply-thread (ov)
-  "Add reply to the thread.
+(defun lab--reply-thread-diff (ov)
+  "Add reply to the thread in diff mode.
 You'll be put in a buffer to write your reply which contains all the
 other replies in the thread as comments so that you have context and you
 can easily copy/paste.
 
-OV is the overlay containing the \\='lab-comment object.  When called
-interactively, it's automatically selected from the current line.  If
-the current line contains multiple threads, then you'll prompted to
-select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+OV is the overlay containing the \\='lab-comment object."
   (when-let* ((ov ov)
               (comment (overlay-get ov 'lab-comment)))
     (lab--put-comment
@@ -2427,8 +2423,8 @@ select one."
                             :content input))))
        (save-excursion (lab--put-comment-overlay comment))))))
 
-(defun lab-edit-thread (ov)
-  "Edit a comment from the thread.
+(defun lab--edit-thread-diff (ov)
+  "Edit a comment from the thread in diff mode.
 
 If there is only one comment in the thread, edit it directly.  Otherwise
 this let's you interactively select which comment to edit.
@@ -2440,7 +2436,6 @@ OV is the overlay containing the \\='lab-comment object.  When called
 interactively, it's automatically selected from the current line.  If
 the current line contains multiple threads, then you'll prompted to
 select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (let* ((comment (overlay-get ov 'lab-comment))
            (selected (lab--select-from-thread comment))
@@ -2473,8 +2468,8 @@ select one."
                :%error (lambda (err _)
                          (message "lab :: Failed to edit thread: %s" err)))))))))))
 
-(defun lab-delete-thread (ov)
-  "Delete a comment from the thread.
+(defun lab--delete-thread-diff (ov)
+  "Delete a comment from the thread in diff mode.
 If there is only one comment in the thread, delete it directly.
 Otherwise this let's you interactively select which comment to delete.
 
@@ -2482,7 +2477,6 @@ OV is the overlay containing the \\='lab-comment object.  When called
 interactively, it's automatically selected from the current line.  If
 the current line contains multiple threads, then you'll prompted to
 select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (let* ((comment (overlay-get ov 'lab-comment))
            (selected (lab--select-from-thread comment))
@@ -2527,17 +2521,12 @@ select one."
                         (message "lab :: Failed to delete the comment: %s" err))))))
         (seq-each (lambda (hook) (funcall hook comment)) lab-delete-comment-hook)))))
 
-(defun lab-resolve-thread (ov)
-  "Resolve the thread.
-
-OV is the overlay containing the \\='lab-comment object.  When called
-interactively, it's automatically selected from the current line.  If
-the current line contains multiple threads, then you'll prompted to
-select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+(defun lab--resolve-thread-diff (ov)
+  "Resolve the thread in diff mode.
+OV is the overlay containing the \\='lab-comment object."
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment))
-              (_ (y-or-n-p "Unresolve this thread? ")))
+              (_ (y-or-n-p "Resolve this thread? ")))
     (pcase (lab--comment-status comment)
       ('new (error "You need to send this comment first"))
       ('other (let-alist lab--merge-request
@@ -2556,17 +2545,12 @@ select one."
                            (message "lab :: Failed to resolve the thread due to %s" data)))))
       (_ (error "Not implemented")))))
 
-(defun lab-unresolve-thread (ov)
-  "Unresolve the thread.
-
-OV is the overlay containing the \\='lab-comment object.  When called
-interactively, it's automatically selected from the current line.  If
-the current line contains multiple threads, then you'll prompted to
-select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+(defun lab--unresolve-thread-diff (ov)
+  "Unresolve the thread in diff mode.
+OV is the overlay containing the \\='lab-comment object."
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment))
-              (_ (y-or-n-p "Resolve this thread? ")))
+              (_ (y-or-n-p "Unresolve this thread? ")))
     (pcase (lab--comment-status comment)
       ('new (error "You need to send this comment first"))
       ('other (let-alist lab--merge-request
@@ -2585,19 +2569,14 @@ select one."
                            (message "lab :: Failed to reopen the thread due to %s" data)))))
       (_ (error "Not implemented")))))
 
-(defun lab-toggle-thread-resolve-status (ov)
-  "Toggle between resolved and unresolved states for the thread.
-
-OV is the overlay containing the \\='lab-comment object.  When called
-interactively, it's automatically selected from the current line.  If
-the current line contains multiple threads, then you'll prompted to
-select one."
-  (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
+(defun lab--toggle-thread-resolve-status-diff (ov)
+  "Toggle between resolved and unresolved states for the thread in diff mode.
+OV is the overlay containing the \\='lab-comment object."
   (when-let* ((_ ov)
               (comment (overlay-get ov 'lab-comment)))
     (if (lab--comment-resolved-by comment)
-        (lab-unresolve-thread ov)
-      (lab-resolve-thread ov))))
+        (lab--unresolve-thread-diff ov)
+      (lab--resolve-thread-diff ov))))
 
 (defun lab--thread-collapsed? (ov)
   "Check if the thread overlay OV is collapsed."
@@ -2691,11 +2670,6 @@ select one."
     (message "lab :: Sending review...Done"))
   (seq-each (lambda (hook) (funcall hook)) lab-send-review-hook))
 
-(defun lab-open-merge-request-on-web ()
-  "View the current merge request on web interface."
-  (interactive nil lab-merge-request-diff-mode)
-  (browse-url lab--merge-request-url))
-
 (defun lab-forward-merge-request-thread ()
   "Go to next merge request thread."
   (interactive nil lab-merge-request-diff-mode)
@@ -2722,29 +2696,6 @@ select one."
           (goto-char (overlay-start prev))
           (seq-each #'funcall lab-jump-to-thread-hook))
       (user-error "No more threads/comments behind"))))
-
-(defun lab-approve-merge-request ()
-  (interactive nil lab-merge-request-diff-mode)
-  (let-alist lab--merge-request
-    (lab--request
-     (format "projects/%s/merge_requests/%s/approve" .project_id .iid)
-     :%type "POST"
-     :%success (lambda (_)
-                 (message "lab :: Approved"))
-     :%error (lambda (data response)
-               (if (= 409 (request-response-status-code response))
-                   (message (substitute-command-keys "lab :: You are currently on an older version of this MR, refresh (\\[revert-buffer]) and then try to approve"))
-                 (message "lab :: Failed to approve: %s" data)))
-     :sha (let-alist (car lab--merge-request-versions) .head_commit_sha))))
-
-(defun lab-unapprove-merge-request ()
-  (interactive nil lab-merge-request-diff-mode)
-  (let-alist lab--merge-request
-    (lab--request
-     (format "projects/%s/merge_requests/%s/unapprove" .project_id .iid)
-     :%success (lambda (_)
-                 (message "lab :: Unapproved"))
-     :%type "POST")))
 
 ;;;;;; Interactive helpers
 
@@ -2784,6 +2735,27 @@ request diff interface."
 
 (declare-function org-fold-hide-sublevels "org-fold")
 (declare-function org-fold-hide-drawer-all "org-fold")
+
+(defvar lab-merge-request-overview-prefix-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "r") #'lab-reply-thread)
+    (define-key map (kbd "e") #'lab-edit-thread)
+    (define-key map (kbd "x") #'lab-delete-thread)
+    (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
+    map))
+
+(defvar lab-merge-request-overview-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c ;") lab-merge-request-overview-prefix-map)
+    map))
+
+(define-derived-mode lab-merge-request-overview-mode org-mode "LabMROverview"
+  "Mode for viewing GitLab merge request overview with threads and notes."
+  :keymap lab-merge-request-overview-mode-map
+  (setq-local
+   revert-buffer-function
+   (lambda (_ignore-auto _noconfirm)
+     (lab-merge-request-overview lab--merge-request-url))))
 
 (defun lab-merge-request-overview (url)
   "Display merge request threads with diffs and notes in an `org-mode' buffer.
@@ -2891,7 +2863,7 @@ and includes author information and timestamps."
                            ":END:" "\n")
                    (insert "#+begin_src markdown"  "\n" .body "\n" "#+end_src" "\n\n")))
                (alist-get 'notes thread)))))
-        (org-mode)
+        (lab-merge-request-overview-mode)
         (org-fold-hide-drawer-all)
         (org-fold-hide-sublevels 1)
         (goto-char (point-min))
@@ -2943,12 +2915,8 @@ nil, fail if we are not on a note."
       (user-error "Point is not on a note"))
     (list thread-id note-id body)))
 
-;; TODO: Use same interactive functions with diff mode
-;; TODO: Add on buffer clickable buttons to edit/delete/add note
-
-(defun lab-merge-request-overview-delete-note ()
+(defun lab--delete-thread-overview ()
   "Delete the note at point in the merge request overview buffer."
-  (interactive)
   (unless lab--merge-request
     (user-error "Not in a merge request overview buffer"))
   (pcase-let* ((`(,thread-id ,note-id) (lab--overview-note-at-point 'fail))
@@ -2969,9 +2937,8 @@ nil, fail if we are not on a note."
          :%error (lambda (err _)
                    (message "lab :: Failed to delete the note: %s" err)))))))
 
-(defun lab-merge-request-overview-edit-note ()
-  "Delete the note at point in the merge request overview buffer."
-  (interactive)
+(defun lab--edit-thread-overview ()
+  "Edit the note at point in the merge request overview buffer."
   (unless lab--merge-request
     (user-error "Not in a merge request overview buffer"))
   (pcase-let* ((`(,thread-id ,note-id ,note-body) (lab--overview-note-at-point 'fail))
@@ -2989,32 +2956,97 @@ nil, fail if we are not on a note."
          :%error (lambda (err _)
                    (message "lab :: Failed to edit the note: %s" err)))))))
 
+(defun lab--reply-thread-overview ()
+  "Add a reply to the thread at point in the merge request overview buffer."
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (let ((thread-id (lab--overview-thread-id 'fail))
+        (buf (current-buffer)))
+    (lab--user-input
+     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :buffer-name "*lab-reply*"
+     :on-accept
+     (lambda (input)
+       (let-alist lab--merge-request
+         (message "lab :: Adding note...")
+         (lab--request
+          (format "projects/%s/merge_requests/%s/discussions/%s/notes"
+                  .project_id .iid thread-id)
+          :%type "POST"
+          :%headers '(("Content-Type" . "application/json"))
+          :%data (json-encode `((body . ,input)))
+          :%success
+          (lambda (note)
+            (with-current-buffer buf
+              (save-excursion
+                (goto-char (org-find-entry-with-id thread-id))
+                (org-end-of-subtree t)
+                (insert "\n** " (lab--format-gitlab-author-org (alist-get 'author note))
+                        "\n"
+                        ":PROPERTIES:" "\n"
+                        ":ID: " (number-to-string (alist-get 'id note)) "\n"
+                        ":CREATED_AT: " (lab--format-gitlab-datetime (alist-get 'created_at note)) "\n"
+                        ":UPDATED_AT: " (lab--format-gitlab-datetime (alist-get 'updated_at note)) "\n"
+                        ":TYPE: note\n"
+                        ":END:" "\n")
+                (insert "#+begin_src markdown\n" (alist-get 'body note) "\n#+end_src\n")))
+            (message "lab :: Adding note...Done"))
+          :%error
+          (lambda (err _)
+            (message "lab :: Failed to add note: %s" err))))))))
+
+(defun lab--resolve-thread-overview (&optional no-confirm)
+  "Resolve the thread at point in the merge request overview buffer.
+If NO-CONFIRM is non-nil, do not ask for confirmation."
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (let ((thread-id (lab--overview-thread-id 'fail)))
+    (when (or no-confirm (y-or-n-p "Resolve this thread? "))
+      (let-alist lab--merge-request
+        (lab--request
+         (format "projects/%s/merge_requests/%s/discussions/%s"
+                 .project_id .iid thread-id)
+         :resolved "true"
+         :%type "PUT"
+         :%success (lambda (_)
+                     (message "lab :: Resolved the thread"))
+         :%error (lambda (data _)
+                   (message "lab :: Failed to resolve the thread due to %s" data)))))))
+
+(defun lab--unresolve-thread-overview (&optional no-confirm)
+  "Unresolve the thread at point in the merge request overview buffer.
+If NO-CONFIRM is non-nil, do not ask for confirmation."
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (let ((thread-id (lab--overview-thread-id 'fail)))
+    (when (or no-confirm (y-or-n-p "Unresolve this thread? "))
+      (let-alist lab--merge-request
+        (lab--request
+         (format "projects/%s/merge_requests/%s/discussions/%s"
+                 .project_id .iid thread-id)
+         :resolved "false"
+         :%type "PUT"
+         :%success (lambda (_)
+                     (message "lab :: Unresolved the thread"))
+         :%error (lambda (data _)
+                   (message "lab :: Failed to unresolve the thread due to %s" data)))))))
+
+(defun lab--toggle-thread-resolve-status-overview ()
+  "Toggle between resolved and unresolved states for the thread in overview mode."
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (let ((state (org-entry-get nil "TODO")))
+    (if (equal state "DONE")
+        (lab--unresolve-thread-overview)
+      (lab--resolve-thread-overview))))
+
 (defun lab--handle-overview-org-state-change ()
   "Manage resolved status of threads through header TODO states."
-  (let-alist lab--merge-request
-    (cond
-     ((and (equal org-state "DONE")
-           (y-or-n-p "Want to mark this thread as resolved?"))
-      (lab--request
-       (format "projects/%s/merge_requests/%s/discussions/%s"
-               .project_id .iid (lab--overview-thread-id 'fail))
-       :resolved "true"
-       :%type "PUT"
-       :%success (lambda (_)
-                   (message "lab :: Resolved the thread"))
-       :%error (lambda (data _)
-                 (message "lab :: Failed to resolve the thread due to %s" data))))
-     ((and (equal org-state "TODO")
-           (y-or-n-p "Want to mark this thread as unresolved?"))
-      (lab--request
-       (im-tap (format "projects/%s/merge_requests/%s/discussions/%s"
-                       .project_id .iid (lab--overview-thread-id 'fail)))
-       :resolved "false"
-       :%type "PUT"
-       :%success (lambda (_)
-                   (message "lab :: Unresolved the thread"))
-       :%error (lambda (data _)
-                 (message "lab :: Failed to resolve the thread due to %s" data)))) )))
+  (cond
+   ((equal org-state "DONE")
+    (lab--resolve-thread-overview 'no-confirm))
+   ((equal org-state "TODO")
+    (lab--unresolve-thread-overview 'no-confirm))))
 
 (defun lab--format-gitlab-author-org (author)
   (let-alist author
@@ -3042,6 +3074,106 @@ very simple conversion."
     (replace-regexp-in-string
      "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
      (format "[[%s/\\2][\\1]]" lab-host))))
+
+;;;; Merge request overview & diff shared functionality
+
+(defalias 'lab-edit-note #'lab-edit-thread)
+(defalias 'lab-delete-note #'lab-delete-thread)
+(defalias 'lab-reply-note #'lab-reply-thread)
+
+(defun lab-edit-thread ()
+  "Edit current note or a note from the thread."
+  (interactive)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--edit-thread-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--edit-thread-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-delete-thread ()
+  "Delete the current note or a note from the thread."
+  (interactive)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--delete-thread-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--delete-thread-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-reply-thread ()
+  "Add a reply to the current thread."
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--reply-thread-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--reply-thread-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-resolve-thread ()
+  "Resolve the current thread."
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--resolve-thread-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--resolve-thread-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-unresolve-thread ()
+  "Unresolve the current thread."
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--unresolve-thread-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--unresolve-thread-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-toggle-thread-resolve-status ()
+  "Toggle between resolved and unresolved states for the thread."
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (cond
+   ((derived-mode-p 'lab-merge-request-diff-mode)
+    (lab--toggle-thread-resolve-status-diff (lab--comment-overlay-at-point)))
+   ((derived-mode-p 'lab-merge-request-overview-mode)
+    (lab--toggle-thread-resolve-status-overview))
+   (t
+    (user-error "Not in a merge request buffer"))))
+
+(defun lab-open-merge-request-on-web ()
+  "View the current merge request on web interface."
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (browse-url lab--merge-request-url))
+
+(defun lab-approve-merge-request ()
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (let-alist lab--merge-request
+    (lab--request
+     (format "projects/%s/merge_requests/%s/approve" .project_id .iid)
+     :%type "POST"
+     :%success (lambda (_)
+                 (message "lab :: Approved"))
+     :%error (lambda (data response)
+               (if (= 409 (request-response-status-code response))
+                   (message (substitute-command-keys "lab :: You are currently on an older version of this MR, refresh (\\[revert-buffer]) and then try to approve"))
+                 (message "lab :: Failed to approve: %s" data)))
+     :sha (let-alist (car lab--merge-request-versions) .head_commit_sha))))
+
+(defun lab-unapprove-merge-request ()
+  (interactive nil lab-merge-request-diff-mode lab-merge-request-overview-mode)
+  (let-alist lab--merge-request
+    (lab--request
+     (format "projects/%s/merge_requests/%s/unapprove" .project_id .iid)
+     :%success (lambda (_)
+                 (message "lab :: Unapproved"))
+     :%type "POST")))
 
 ;;;; TODOs:
 
