@@ -2786,14 +2786,14 @@ request diff interface."
 (declare-function org-fold-hide-drawer-all "org-fold")
 
 (defun lab-merge-request-overview (url)
-  "Display merge request threads with diffs and notes in an org-mode buffer.
-
+  "Display merge request threads with diffs and notes in an `org-mode' buffer.
 Fetches merge request versions, threads, and their associated diff notes
 from a GitLab merge request URL.  Shows the threads with individual
-notes and diff notes, formatting the diffs as org-mode source blocks.
+notes and diff notes, formatting the diffs as `org-mode' source blocks.
 Marks resolvable threads as TODO or DONE based on their resolved status,
 and includes author information and timestamps."
-  (interactive (list (read-string "MR: " nil 'lab-merge-request-history)))
+  (interactive (list (or lab--merge-request-url
+               (read-string "MR: " nil 'lab-merge-request-history))))
   (let ((mr (lab--parse-merge-request-url url)))
     (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
       (erase-buffer)
