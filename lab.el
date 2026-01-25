@@ -2860,6 +2860,7 @@ and includes author information and timestamps."
                       "\n")
               (insert ":PROPERTIES:" "\n"
                       ":ID: " (alist-get 'id thread) "\n"
+                      ":TYPE: thread\n"
                       ":END:" "\n")
               (seq-do-indexed
                (lambda (note idx)
@@ -2880,15 +2881,15 @@ and includes author information and timestamps."
                                     (equal (alist-get 'new_path diff) (alist-get 'new_path .position))))
                                  (alist-get 'diffs diff-ver))))
                        (insert "\n#+end_src\n\n")))
-                   (let ((created-at (lab--format-gitlab-datetime .created_at))
-                         (updated-at (lab--format-gitlab-datetime .updated_at)))
-                     (insert "** " (lab--format-gitlab-author-org .author)
-                             ", on " "[" created-at "]"
-                             (if (not (equal created-at updated-at))
-                                 (concat ", " "edited on [" updated-at "]")
-                               "")
-                             "\n"))
-                   (insert "#+begin_src markdown :id " (number-to-string .id) "\n" .body "\n" "#+end_src" "\n\n")))
+                   (insert "** " (lab--format-gitlab-author-org .author)
+                           "\n"
+                           ":PROPERTIES:" "\n"
+                           ":ID: " (number-to-string .id) "\n"
+                           ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
+                           ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
+                           ":TYPE: note\n"
+                           ":END:" "\n")
+                   (insert "#+begin_src markdown"  "\n" .body "\n" "#+end_src" "\n\n")))
                (alist-get 'notes thread)))))
         (org-mode)
         (org-fold-hide-drawer-all)
@@ -2899,7 +2900,121 @@ and includes author information and timestamps."
         (setq-local lab--merge-request-versions mr-versions)
         (setq-local lab--merge-request-threads mr-threads)
         (lab-merge-request-diff-mode-update-header)
+        (add-hook
+         'org-after-todo-state-change-hook
+         #'lab--handle-overview-org-state-change
+         nil t)
         (switch-to-buffer (current-buffer))))))
+
+(declare-function org-element-at-point "org-element")
+(declare-function org-element-property "org-element")
+(declare-function org-element-type "org-element")
+(declare-function org-entry-get "org")
+
+(defun lab--overview-thread-id (&optional fail?)
+  (let* ((id (save-excursion
+               (cond
+                ((equal (org-entry-get nil "TYPE" t) "thread")
+                 (org-entry-get nil "ID" t))
+                ((and (org-up-heading-safe)
+                      (equal (org-entry-get nil "TYPE" t) "thread"))
+                 (org-entry-get nil "ID" t))))))
+    (when (and fail? (not id))
+      (user-error "Point is not on a thread"))
+    id))
+
+(defun lab--overview-note-at-point (&optional fail?)
+  "Return (THREAD-ID NOTE-ID BODY) for the note at point in an overview buffer.
+Returns nil if point is not inside a note source block.  If FAIL? is non
+nil, fail if we are not on a note."
+  (when-let* ((thread-id (lab--overview-thread-id fail?))
+              (note-id (when (equal (org-entry-get nil "TYPE" t) "note")
+                         (org-entry-get nil "ID" t)))
+              (body (save-excursion
+                      (save-restriction
+                        (org-back-to-heading nil)
+                        (ignore-errors (org-next-block 1))
+                        (when (re-search-forward
+                               "^#\\+begin_src markdown"
+                               (save-excursion (org-end-of-subtree t) (point)) t)
+                          (and-let* ((info (org-babel-get-src-block-info)))
+                            (nth 1 info)))))))
+    (when (and fail? (not (and thread-id note-id body)))
+      (user-error "Point is not on a note"))
+    (list thread-id note-id body)))
+
+;; TODO: Use same interactive functions with diff mode
+;; TODO: Add on buffer clickable buttons to edit/delete/add note
+
+(defun lab-merge-request-overview-delete-note ()
+  "Delete the note at point in the merge request overview buffer."
+  (interactive)
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (pcase-let* ((`(,thread-id ,note-id) (lab--overview-note-at-point 'fail))
+               (buf (current-buffer)))
+    (when (y-or-n-p "Are you sure you want to delete this note? ")
+      (let-alist lab--merge-request
+        (message "lab :: Deleting...")
+        (lab--request
+         (format "projects/%s/merge_requests/%s/discussions/%s/notes/%s"
+                 .project_id .iid thread-id note-id)
+         :%type "DELETE"
+         :%success (lambda (_data)
+                     (with-current-buffer buf
+                       (if (goto-char (org-find-entry-with-id note-id))
+                           (org-cut-subtree)
+                         (lab-merge-request-overview lab--merge-request-url)))
+                     (message "lab :: Deleting...Done"))
+         :%error (lambda (err _)
+                   (message "lab :: Failed to delete the note: %s" err)))))))
+
+(defun lab-merge-request-overview-edit-note ()
+  "Delete the note at point in the merge request overview buffer."
+  (interactive)
+  (unless lab--merge-request
+    (user-error "Not in a merge request overview buffer"))
+  (pcase-let* ((`(,thread-id ,note-id ,note-body) (lab--overview-note-at-point 'fail))
+               (buf (current-buffer)))
+    (when (y-or-n-p "Are you sure you want to edit this note? ")
+      (let-alist lab--merge-request
+        (message "lab :: Editing...")
+        (lab--request
+         (format "projects/%s/merge_requests/%s/discussions/%s/notes/%s"
+                 .project_id .iid thread-id note-id)
+         :%type "PUT"
+         :body note-body
+         :%success (lambda (_data)
+                     (message "lab :: Edited...Done"))
+         :%error (lambda (err _)
+                   (message "lab :: Failed to edit the note: %s" err)))))))
+
+(defun lab--handle-overview-org-state-change ()
+  "Manage resolved status of threads through header TODO states."
+  (let-alist lab--merge-request
+    (cond
+     ((and (equal org-state "DONE")
+           (y-or-n-p "Want to mark this thread as resolved?"))
+      (lab--request
+       (format "projects/%s/merge_requests/%s/discussions/%s"
+               .project_id .iid (lab--overview-thread-id 'fail))
+       :resolved "true"
+       :%type "PUT"
+       :%success (lambda (_)
+                   (message "lab :: Resolved the thread"))
+       :%error (lambda (data _)
+                 (message "lab :: Failed to resolve the thread due to %s" data))))
+     ((and (equal org-state "TODO")
+           (y-or-n-p "Want to mark this thread as unresolved?"))
+      (lab--request
+       (im-tap (format "projects/%s/merge_requests/%s/discussions/%s"
+                       .project_id .iid (lab--overview-thread-id 'fail)))
+       :resolved "false"
+       :%type "PUT"
+       :%success (lambda (_)
+                   (message "lab :: Unresolved the thread"))
+       :%error (lambda (data _)
+                 (message "lab :: Failed to resolve the thread due to %s" data)))) )))
 
 (defun lab--format-gitlab-author-org (author)
   (let-alist author
