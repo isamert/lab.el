@@ -69,6 +69,28 @@
   :type 'string
   :group 'lab)
 
+(defcustom lab-config
+  nil
+  "List of GitLab host configurations for multiple hosts support.
+
+Each item is a plist in the form of:
+  (:host \"https://gitlab.com\" :token \"...\" :group \"my\")
+
+:token is optional; if omitted, token is looked up via auth-source.
+:group is also optional, see `lab-group' for details.
+
+Example:
+  (setq lab-config
+        '((:host \"https://gitlab.com\"
+           :token \"...\")
+          (:host \"https://gitlab.mycompany.com\"
+           :group \"mytribe\")))
+
+Also see `lab-host', `lab-token', `lab-group' if you are not interested
+in using multiple hosts."
+  :type 'string
+  :group 'lab)
+
 (defcustom lab-group
   nil
   "The GitLab group you mostly work on.
@@ -311,6 +333,8 @@ diff display."
 
 (defvar lab--user-input-history (make-hash-table :test #'equal)
   "History for user inputs.")
+
+(defvar lab--current-config nil)
 
 ;;;; Public variables & utilities
 
@@ -855,7 +879,7 @@ Also see `lab-after-git-clone-functions'."
 (async-defun lab-clone-bulk (gitlab-group root)
   "Clone all repositories of GITLAB-GROUP into ROOT."
   (interactive (list
-      (read-string "Enter GitLab group path to clone all projects from: " lab-group)
+      (read-string "Enter GitLab group path to clone all projects from: " (lab--current-group))
       (read-directory-name "Path to clone projects in: " lab-projects-directory)))
   (let* ((projects (prog2 (message "Please wait, getting project list...")
                        (await (promise-new
@@ -987,7 +1011,7 @@ this check makes sense without any significant loss of functionality."
           (thread-last
             remote-url
             (s-chop-suffix ".git")
-            (s-chop-prefix lab-host)
+            (s-chop-prefix (lab--current-host))
             (s-chop-prefix "/")
             (s-chop-prefix "/")
             (s-chop-prefix "/")
@@ -1000,18 +1024,48 @@ this check makes sense without any significant loss of functionality."
           (s-trim)
           (url-hexify-string))))))
 
-(defun lab--retrieve-token ()
+(defun lab--current-config ()
+  (cond
+   (lab--current-config
+    lab--current-config)
+   ((and (null lab-config) lab-host)
+    (list :host lab-host :token lab-token :group lab-group))
+   ((and lab-config (length= lab-config 1))
+    (car lab-config))
+   ((and lab-config lab--merge-request-url) ; we are in a merge request diff/overview etc. buffer
+    (lab--config-for-url lab--merge-request-url))
+   ((and lab-config (locate-dominating-file "." ".git")) ; we are in a repo
+    (or (when-let* ((base (lab-git-remote-homepage)))
+          (lab--config-for-url base))
+        (car lab-config)))
+   (lab-config
+    (car lab-config))
+   (t
+    (user-error "lab.el :: Either configure `lab-host' or `lab-config'"))))
+
+(defun lab--current-host (&optional config)
+  (plist-get (or config (lab--current-config)) :host))
+
+(defun lab--current-group (&optional config)
+  (plist-get (or config (lab--current-config)) :group))
+
+(defun lab--current-token (&optional config)
   "Retrieve the GitLab API token to use."
-  (or lab-token
-      (when-let* ((entry (car (auth-source-search :host lab-host :max 1)))
+  (or (plist-get (or config (lab--current-config)) :token)
+      (when-let* ((entry (car (auth-source-search :host (lab--current-host config) :max 1)))
                   (secret-fn (plist-get entry :secret)))
         (funcall secret-fn))))
+
+(defun lab--config-for-url (url)
+  (seq-find
+   (lambda (it) (s-prefix? (plist-get it :host) url))
+   lab-config))
 
 ;;;###autoload
 (cl-defun lab--request
     (endpoint
      &rest params
-     &key (%type "GET") %headers %params %data %collect-all? %raw? %success %error
+     &key (%type "GET") %headers %params %data %collect-all? %raw? %success %error %config
      &allow-other-keys)
   "Make a sync or async GitLab API request to ENDPOINT with PARAMS.
 
@@ -1047,13 +1101,13 @@ Example:
    :ref \"master\"
    :%collect-all t)"
   (setq params (lab--plist-remove-keys-with-prefix ":%" params))
-  (let* ((token (lab--retrieve-token))
+  (let* ((token (lab--current-token %config))
          (base-url
           (thread-last
             (if (s-prefix? "http" endpoint)
                 endpoint
-              (format "%s/api/v4/%s" lab-host endpoint))
-            (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string lab-group)))
+              (format "%s/api/v4/%s" (lab--current-host %config) endpoint))
+            (s-replace-regexp "#{group}" (lambda (&rest _) (url-hexify-string (lab--current-group %config))))
             (s-replace-regexp "#{project}" (lambda (&rest _)
                                              (or (ignore-errors (lab--project-path))
                                                  (user-error "You are not in a valid git project"))))))
@@ -1360,7 +1414,9 @@ Send a notification if it's finished, failed or waiting for a
 manual action.  RERUN? is used to indicate that this is a
 recurring call, instead of a new watch request."
   (interactive "sPipeline URL: ")
-  (let* ((data (s-match (rx (literal lab-host) (regexp "/\\(.*\\)/-/pipelines/\\([0-9]+\\)")) url))
+  (let* ((config (lab--config-for-url url))
+         (host (lab--current-host config))
+         (data (s-match (rx (literal host) (regexp "/\\(.*\\)/-/pipelines/\\([0-9]+\\)")) url))
          (project (nth 1 data))
          (project-hexified (url-hexify-string project))
          (pipeline (nth 2 data)))
@@ -1372,39 +1428,45 @@ recurring call, instead of a new watch request."
      (if rerun? lab-pipeline-watcher-debounce-time 1)
      nil
      (lambda ()
-       (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
-         (pcase .status
-           ("success"
-            (lab--alert (format "Pipeline FINISHED: %s/%s" project pipeline)))
-           ("failed"
-            (lab--alert (format "Pipeline FAILED: %s/%s" project pipeline)))
-           ((or "canceled" "skipped" "scheduled")
-            (lab--alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
-           ("manual"
-            (lab--alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
-            (when lab-should-open-pipeline-on-manual-action?
-              (browse-url .web_url)))
-           (_
-            (lab-watch-pipeline url t))))))))
+       (let ((lab--current-config config))
+         (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
+           (pcase .status
+             ("success"
+              (lab--alert (format "Pipeline FINISHED: %s/%s" project pipeline)))
+             ("failed"
+              (lab--alert (format "Pipeline FAILED: %s/%s" project pipeline)))
+             ((or "canceled" "skipped" "scheduled")
+              (lab--alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
+             ("manual"
+              (lab--alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
+              (when lab-should-open-pipeline-on-manual-action?
+                (browse-url .web_url)))
+             (_
+              (lab-watch-pipeline url t)))))))))
 
 ;;;###autoload
 (defun lab-watch-pipeline-for-last-commit ()
   "Start watching the pipeline created by your last commit."
   (interactive)
-  (unless (s-prefix? lab-host (lab-git-remote-homepage))
-    (user-error "Not a valid Gitlab repo"))
-  (let ((project (lab--project-path))
-        (sha (lab-git-last-commit-sha)))
-    ;; Pipeline may take some time to appear
-    (run-with-timer
-     lab-pipeline-watcher-initial-delay nil
-     (lambda ()
-       (if-let* ((lab-result-count 3)
-                 (pipeline (seq-find
-                            (lambda (it) (equal sha (alist-get 'sha it)))
-                            (lab-get-project-pipelines project))))
-           (lab-watch-pipeline (alist-get 'web_url pipeline))
-         (user-error "Seems like there are no pipelines created for your last commit"))))))
+  (let* ((interactive? (called-interactively-p 'interactive))
+         (config (lab--current-config)))
+    (if (s-prefix? (lab--current-host config) (lab-git-remote-homepage))
+        (let ((project (lab--project-path))
+              (sha (lab-git-last-commit-sha)))
+          ;; Pipeline may take some time to appear
+          (run-with-timer
+           lab-pipeline-watcher-initial-delay nil
+           (lambda ()
+             (if-let* ((lab-result-count 3)
+                       (pipeline (seq-find
+                                  (lambda (it) (equal sha (alist-get 'sha it)))
+                                  (let ((lab--current-config config))
+                                    (lab-get-project-pipelines project)))))
+                 (lab-watch-pipeline (alist-get 'web_url pipeline))
+               (when interactive?
+                 (user-error "Seems like there are no pipelines created for your last commit"))))))
+      (if interactive?
+          (user-error "Not a valid Gitlab repo")))))
 
 ;;;###autoload
 (defun lab-watch-merge-request-last-pipeline (mr)
@@ -1602,6 +1664,10 @@ VARIABLES is an alist, like:
    (?i "Inspect"
        (lab--inspect-obj it))))
 
+;; TODO: Can't parse :%config by `lab--config-for-url' and pass to
+;; `lab--request' from here because `lab-merge-request-act-on' is
+;; generated. Maybe simply pass :%config each time lab--request is
+;; called inside the "lab--define-actions-for merge-request".
 (defun lab-act-on-merge-request (url)
   "Act on given merge request URL."
   (interactive "sMerge Request URL: ")
@@ -1752,7 +1818,7 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
     (iid . \"579\"))"
   (pcase-let* ((`(,project_id ,iid)
                 (->>
-                 (s-chop-prefix (concat (s-chop-suffix "/" lab-host) "/") url)
+                 (s-chop-prefix (concat (s-chop-suffix "/" (lab--current-host (lab--config-for-url url))) "/") url)
                  (s-split "/-/merge_requests/"))))
     `((web_url . ,url)
       (project_id . ,(url-hexify-string project_id))
@@ -2281,21 +2347,27 @@ This function assumes you are currently on a hunk header."
 ;;;;; Interactive
 
 (async-defun lab--fetch-mr-data (url)
-  (let ((mr (lab--parse-merge-request-url url)))
+  (let ((mr (lab--parse-merge-request-url url))
+        (config (lab--config-for-url url)))
     (let-alist mr
-      (let ((mr-p (lab--request-promise (format "projects/%s/merge_requests/%s" .project_id .iid)))
+      (let ((mr-p (lab--request-promise
+                   (format "projects/%s/merge_requests/%s" .project_id .iid)
+                   :%config config))
             (threads-p (lab--request-promise
                         (format "projects/%s/merge_requests/%s/discussions" .project_id .iid)
-                        :%collect-all? t))
+                        :%collect-all? t
+                        :%config config))
             (diffs-p (lab--request-promise
                       (format "projects/%s/merge_requests/%s/diffs" .project_id .iid)
                       :%collect-all? t
+                      :%config config
                       ;; Maxing per_page usually ended up with HTTP
                       ;; 500 in my tests. Hence I'm keeping it at the
                       ;; default value for this endpoint
                       :per_page 20))
             (versions-p (lab--request-promise
-                         (format "projects/%s/merge_requests/%s/versions" .project_id .iid))))
+                         (format "projects/%s/merge_requests/%s/versions" .project_id .iid)
+                         :%config config)))
         (list
          (map-merge 'list (await mr-p) mr)
          (await threads-p)
@@ -3259,7 +3331,7 @@ PARAMS is an plist where the keys are:
          (type (or (plist-get params :type) 'mine))
          ;; Possible states :: opened, closed, locked, merged, all
          (state (or (plist-get params :state) 'opened))
-         (group (url-hexify-string (or (plist-get params :group) lab-group)))
+         (group (url-hexify-string (or (plist-get params :group) (lab--current-group))))
          (scope (or (plist-get params :scope) 'all))
          ;; TODO (or ... current-project?)
          (project (or (plist-get params :project)))
@@ -3313,7 +3385,7 @@ PARAMS is an plist where the keys are:
           (propertize
            (thread-last
              (alist-get 'web_url mr)
-             (s-chop-prefix lab-host)
+             (s-chop-prefix (lab--current-host))
              (s-split "/-/merge_requests/")
              (car)
              (s-split "/")
