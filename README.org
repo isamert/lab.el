@@ -131,7 +131,10 @@ accessed through other listing functions.
   - Bulk pull projects to keep your local copies up-to-date (~lab-pull-bulk~).
   - Bulk clone projects from given namespace, with exact same hierarchy (~lab-clone-bulk~).
 - Merge Requests ::
-  - Conduct code reviews totally inside Emacs!
+  - Conduct code reviews totally inside Emacs with
+    ~lab-open-merge-request-diff~!
+  - Show merge request overview and threads in an org buffer with
+    ~lab-merge-request-overview~.
   - List merge requests belonging to a group, a branch, a project or
     all merge requests that you created or assigned to
     (~lab-list-{my,group,branch,project}-merge-requests~), and act on
@@ -209,7 +212,7 @@ and then open the diff view by issuing the ~diff & review~ action.
 You'll be dropped into the diff of the given merge request inside a
 ~diff-mode~. Here you can use the following commands:
 
-| Key       | Binding                            |                                                                                                                     |
+| Key       | Binding                            | Description                                                                                                         |
 |-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
 | ~C-c ; RET~ | lab-send-review                    | Send the pending review. See the header line for the review status.                                                 |
 | ~C-c ; n~   | lab-new-thread                     | Create a new thread at given line.                                                                                  |
@@ -222,6 +225,8 @@ You'll be dropped into the diff of the given merge request inside a
 | ~C-c ; ]~   | lab-forward-merge-request-thread   | Jump to the next thread.                                                                                            |
 |-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
 | ~C-c ; o~   | lab-open-merge-request-on-web      | Open the MR view on your web browser of the current MR you are reviewing.                                           |
+| ~C-c ; u~   | lab-approve-merge-request          | Approve the merge request.                                                                                          |
+| ~C-c ; a~   | lab-unapprove-merge-request        | Unapprove the merge request.                                                                                        |
 |-----------+------------------------------------+---------------------------------------------------------------------------------------------------------------------|
 | ~C-c ; i m~ | lab-inspect-merge-request          | Inspect the raw server response for this merge request.                                                             |
 | ~C-c ; i d~ | lab-inspect-merge-request-diffs    | Inspect the raw server response for this merge request's diffs.                                                     |
@@ -299,6 +304,55 @@ capabilities:
 With this, you can also so all kind of crazy stuff like checking out
 to the branch of the merge request etc. See the documentation of
 ~lab-open-merge-request-diff-hook~ for more information.
+
+* Merge request overview
+
+This is a similar interface to the "Overview" tab of the GitLab Merge
+Request view, where you can see the merge request summary and all the
+activity in chronological order, such as commits, opened threads,
+replies to those threads, changes, etc.
+
+Either use the function ~lab-open-merge-request-overview~ and give it a
+merge request link or use any of the following functions to find a
+merge request:
+
+- ~lab-list-my-merge-requests~
+- ~lab-list-group-merge-requests~
+- ~lab-list-branch-merge-requests~
+- ~lab-list-project-merge-requests~
+
+and then open the overview view by issuing the ~threads & overview~ action.
+
+
+Like in the merge request diff buffer, you can use the following
+functions to manipulate threads and the merge request itself:
+
+| Key     | Binding                          | Description                                                                                                         |
+|---------+----------------------------------+---------------------------------------------------------------------------------------------------------------------|
+| ~C-c ; r~ | lab-reply-thread                 | Add a reply to an existing thread at point.                                                                         |
+| ~C-c ; e~ | lab-edit-thread                  | Edit the thread or child comment in the thread at point. Effect is immediate for already existing comments/threads. |
+| ~C-c ; x~ | lab-delete-thread                | Delete the thread or child comment in the thread at point.                                                          |
+| ~C-c ; t~ | lab-toggle-thread-resolve-status | Toggle the "Resolved" status of the thread.                                                                         |
+
+Only difference is that these are applied immediately, you don't need
+to do ~lab-send-review~. For example, to edit a thread/comment, simply
+change the text and then hit ~C-c ; e~ (or do ~M-x lab-edit-thread~) and
+the change will be applied immediately. Similarly, to add a reply to a
+thread ~C-c ; r~ (or do ~M-x lab-reply-thread~), write your reply and then
+hit ~C-c C-c~. It will be sent immediately and the overview buffer will
+be updated.
+
+The following functionality is also available, similarly to diff
+buffer.
+
+| Key     | Binding                       | Description                                                               |
+|---------+-------------------------------+---------------------------------------------------------------------------|
+| ~C-c ; o~ | lab-open-merge-request-on-web | Open the MR view on your web browser of the current MR you are reviewing. |
+| ~C-c ; u~ | lab-approve-merge-request     | Approve the merge request.                                                |
+| ~C-c ; a~ | lab-unapprove-merge-request   | Unapprove the merge request.                                              |
+
+The list may be outdated, see ~M-x desribe-keymap
+lab-merge-request-overview-prefix-map~ for an up-to-date list.
 
 * Extras/tips
 
