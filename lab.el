@@ -1580,8 +1580,8 @@ VARIABLES is an alist, like:
           lab-after-merge-request-mark-ready-functions)))
    (?d "Diff & Review"
        (lab-open-merge-request-diff .web_url))
-   ;; (?t "Threads & overview"
-   ;;     (lab-merge-request-overview .web_url))
+   (?t "Threads & overview"
+       (lab-merge-request-overview .web_url))
    (?r "Rebase"
        ;; TODO add a function that rebases merge request with given
        ;; URL and write this in terms of the new function
