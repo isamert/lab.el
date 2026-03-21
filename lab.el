@@ -2735,6 +2735,14 @@ request diff interface."
 
 (declare-function org-fold-hide-sublevels "org-fold")
 (declare-function org-fold-hide-drawer-all "org-fold")
+(declare-function org-fold-hide-drawer-all "org-fold")
+(declare-function org-up-heading-safe "org")
+(declare-function org-back-to-heading "org")
+(declare-function org-next-block "org")
+(declare-function org-end-of-subtree "org")
+(declare-function org-babel-get-src-block-info "ob-core")
+(declare-function org-find-entry-with-id "org")
+(declare-function org-cut-subtree "org")
 
 (defvar lab-merge-request-overview-prefix-map
   (let ((map (make-sparse-keymap)))
@@ -2941,8 +2949,7 @@ nil, fail if we are not on a note."
   "Edit the note at point in the merge request overview buffer."
   (unless lab--merge-request
     (user-error "Not in a merge request overview buffer"))
-  (pcase-let* ((`(,thread-id ,note-id ,note-body) (lab--overview-note-at-point 'fail))
-               (buf (current-buffer)))
+  (pcase-let* ((`(,thread-id ,note-id ,note-body) (lab--overview-note-at-point 'fail)))
     (when (y-or-n-p "Are you sure you want to edit this note? ")
       (let-alist lab--merge-request
         (message "lab :: Editing...")
@@ -3040,6 +3047,7 @@ If NO-CONFIRM is non-nil, do not ask for confirmation."
         (lab--unresolve-thread-overview)
       (lab--resolve-thread-overview))))
 
+(defvar org-state)
 (defun lab--handle-overview-org-state-change ()
   "Manage resolved status of threads through header TODO states."
   (cond
