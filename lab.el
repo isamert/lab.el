@@ -1581,7 +1581,7 @@ VARIABLES is an alist, like:
    (?d "Diff & Review"
        (lab-open-merge-request-diff .web_url))
    (?t "Threads & overview"
-       (lab-merge-request-overview .web_url))
+       (lab-open-merge-request-overview .web_url))
    (?r "Rebase"
        ;; TODO add a function that rebases merge request with given
        ;; URL and write this in terms of the new function
@@ -2746,10 +2746,19 @@ request diff interface."
 
 (defvar lab-merge-request-overview-prefix-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "a") #'lab-approve-merge-request)
+    (define-key map (kbd "u") #'lab-unapprove-merge-request)
+
     (define-key map (kbd "r") #'lab-reply-thread)
     (define-key map (kbd "e") #'lab-edit-thread)
     (define-key map (kbd "x") #'lab-delete-thread)
     (define-key map (kbd "t") #'lab-toggle-thread-resolve-status)
+
+    (define-key map (kbd "o") #'lab-open-merge-request-on-web)
+    (define-key map (kbd "im") #'lab-inspect-merge-request)
+    (define-key map (kbd "iv") #'lab-inspect-merge-request-versions)
+    (define-key map (kbd "it") #'lab-inspect-merge-request-threads)
+    (define-key map (kbd "id") #'lab-inspect-merge-request-diffs)
     map))
 
 (defvar lab-merge-request-overview-mode-map
@@ -2763,9 +2772,9 @@ request diff interface."
   (setq-local
    revert-buffer-function
    (lambda (_ignore-auto _noconfirm)
-     (lab-merge-request-overview lab--merge-request-url))))
+     (lab-open-merge-request-overview lab--merge-request-url))))
 
-(defun lab-merge-request-overview (url)
+(defun lab-open-merge-request-overview (url)
   "Display merge request threads with diffs and notes in an `org-mode' buffer.
 Fetches merge request versions, threads, and their associated diff notes
 from a GitLab merge request URL.  Shows the threads with individual
@@ -2807,7 +2816,7 @@ and includes author information and timestamps."
           (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
           (insert (format "[[%s][Open at web]] | " url))
           (insert (format "[[elisp:(lab-open-merge-request-diff \"%s\")][Diff & review]] | " url))
-          (insert (format "[[elisp:(lab-merge-request-overview \"%s\")][Refresh]]" url))
+          (insert (format "[[elisp:(lab-open-merge-request-overview \"%s\")][Refresh]]" url))
           (insert "\n\n-----\n\n")
           (insert (format "- MR :: %s → %s, by %s\n" .source_branch .target_branch (lab--format-gitlab-author-org .author)))
           (insert "- Last pipeline :: " (s-trim (lab--format-pipeline .head_pipeline)))
@@ -2940,7 +2949,7 @@ nil, fail if we are not on a note."
                      (with-current-buffer buf
                        (if (goto-char (org-find-entry-with-id note-id))
                            (org-cut-subtree)
-                         (lab-merge-request-overview lab--merge-request-url)))
+                         (lab-open-merge-request-overview lab--merge-request-url)))
                      (message "lab :: Deleting...Done"))
          :%error (lambda (err _)
                    (message "lab :: Failed to delete the note: %s" err)))))))
