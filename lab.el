@@ -1713,7 +1713,6 @@ Main branch is one the branch names listed in `lab-main-branch-name'."
             lab-after-merge-requests-create-functions)
            (lab--open-web-url (alist-get 'web_url result))))))))
 
-;; TODO: Test if this works or not after the change
 (defun lab--parse-merge-request-buffer ()
   (goto-char (point-min))
   (let* ((yaml (when (search-forward-regexp lab--regex-yaml-metadata-border nil t)
@@ -1974,32 +1973,38 @@ If nil, then formatted as \"now\".")
       (if header? "\n" ""))
      'face `(:inherit default :foreground "DimGray" :extend t))))
 
+(defun lab--make-comment-overlay-text (header content children)
+  (let ((bar (propertize "┃" 'face '(:foreground "DimGray"))))
+    (with-temp-buffer
+      (insert "\n" (lab--spacer :pre "┏" :header header))
+      (insert (lab--prefix-all-lines bar (lab--markdown-fontify content)))
+      (seq-each
+       (lambda (child)
+         (insert
+          "\n"
+          (lab--spacer
+           :pre (concat bar "  ┏")
+           :header (lab--make-comment-header child))
+          (lab--prefix-all-lines (concat bar "  " bar)
+                                 (lab--markdown-fontify (lab--comment-content child)))
+          "\n"
+          (lab--spacer :pre (concat bar "  ┗"))))
+       children)
+      (insert "\n" (lab--spacer :pre "┗"))
+      (let ((char-property-alias-alist '((face font-lock-face))))
+        (font-lock-append-text-property (point-min) (point-max) 'face '(:inherit default :extend t)))
+      (buffer-string))))
+
 (cl-defun lab--put-comment-overlay (comment)
-  (let* ((bar (propertize "┃" 'face '(:foreground "DimGray")))
-         (beg (lab--comment-beginning comment))
+  (let* ((beg (lab--comment-beginning comment))
          (end (lab--comment-end comment))
          (ov (save-excursion
                (goto-char end)
                (make-overlay beg end)))
-         (text (with-temp-buffer
-                 (insert "\n" (lab--spacer :pre "┏" :header (lab--make-comment-header comment)))
-                 (insert (lab--prefix-all-lines bar (lab--markdown-fontify (lab--comment-content comment))))
-                 (seq-each
-                  (lambda (child)
-                    (insert
-                     "\n"
-                     (lab--spacer
-                      :pre (concat bar "  ┏")
-                      :header (lab--make-comment-header child))
-                     (lab--prefix-all-lines (concat bar "  " bar)
-                                            (lab--markdown-fontify (lab--comment-content child)))
-                     "\n"
-                     (lab--spacer :pre (concat bar "  ┗"))))
-                  (lab--comment-children comment))
-                 (insert "\n" (lab--spacer :pre "┗"))
-                 (let ((char-property-alias-alist '((face font-lock-face))))
-                   (font-lock-append-text-property (point-min) (point-max) 'face '(:inherit default :extend t)))
-                 (buffer-string))))
+         (text (lab--make-comment-overlay-text
+                (lab--make-comment-header comment)
+                (lab--comment-content comment)
+                (lab--comment-children comment))))
     (save-excursion
       (goto-char (overlay-start ov))
       (overlay-put ov 'lab-comment comment)
@@ -2592,19 +2597,14 @@ select one."
   (interactive (list (lab--comment-overlay-at-point)) lab-merge-request-diff-mode)
   (when ov
     (let* ((comment (overlay-get ov 'lab-comment))
-           (bar (propertize "┃" 'face '(:foreground "DimGray")))
-           (header (lab--make-comment-header comment))
-           (collapsed-text (concat "\n"
-                                   (lab--spacer :pre "┏" :header header)
-                                   (propertize (concat bar " [collapsed]")
-                                               'face '(:inherit default :extend t :foreground "DimGray"))
-                                   "\n"
-                                   (lab--spacer :pre "┗"))))
-      ;; Store the original text for later expansion
+           (ov-string (lab--make-comment-overlay-text
+                       (lab--make-comment-header comment)
+                       "<!-- collapsed -->"
+                       '())))
       (unless (lab--thread-collapsed? ov)
         (overlay-put ov 'lab-thread-original-text (overlay-get ov 'after-string))
         (overlay-put ov 'lab-thread-collapsed t)
-        (overlay-put ov 'after-string collapsed-text)))))
+        (overlay-put ov 'after-string ov-string)))))
 
 (defun lab-expand-thread-at-point (ov)
   "Expand the collapsed thread at point.
