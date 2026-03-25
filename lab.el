@@ -570,12 +570,14 @@ function is called if given and the buffer is simply killed."
 
        (cl-defun ,(funcall lab--generate-action-name category "select-and-act-on" t) (items)
          (ignore-error (quit minibuffer-quit)
-           (let* ((result (lab--completing-read-object
-                           (format "%s: " (s-titleize (format "%s" ',category)))
-                           items
-                           :formatter ,formatter
-                           :category ',lab-category-full-name
-                           :sort? ,sort?)))
+           (let* ((result (if (eq (length items) 1)
+                              (car items)
+                            (lab--completing-read-object
+                             (format "%s: " (s-titleize (format "%s" ',category)))
+                             items
+                             :formatter ,formatter
+                             :category ',lab-category-full-name
+                             :sort? ,sort?))))
              (funcall #',(funcall lab--generate-action-name category "act-on" t) result)))))))
 
 (defvar project-current-inhibit-prompt)
