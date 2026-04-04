@@ -2913,6 +2913,11 @@ and includes author information and timestamps."
               (promise-wait lab--promise-timeout)
               (promise-wait-value)
               (seq-map-indexed (lambda (elt idx) (cons (nth idx diff-versions) elt))))))
+        (lab-merge-request-overview-mode)
+        (setq-local lab--merge-request-url url)
+        (setq-local lab--merge-request mr-info)
+        (setq-local lab--merge-request-versions mr-versions)
+        (setq-local lab--merge-request-threads mr-threads)
         (let-alist mr-info
           (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
           (insert (format "[[%s][Open at web]] | " url))
@@ -2981,14 +2986,9 @@ and includes author information and timestamps."
                            ":END:" "\n")
                    (insert "#+begin_src markdown"  "\n" .body "\n" "#+end_src" "\n\n")))
                (alist-get 'notes thread)))))
-        (lab-merge-request-overview-mode)
         (org-fold-hide-drawer-all)
         (org-fold-hide-sublevels 1)
         (goto-char (point-min))
-        (setq-local lab--merge-request-url url)
-        (setq-local lab--merge-request mr-info)
-        (setq-local lab--merge-request-versions mr-versions)
-        (setq-local lab--merge-request-threads mr-threads)
         (lab-merge-request-diff-mode-update-header)
         (add-hook
          'org-after-todo-state-change-hook
@@ -3191,7 +3191,7 @@ very simple conversion."
     (s-replace-regexp "\\*\\*\\([^\\*\n]+\\)\\*\\*" "/\\1/")
     (replace-regexp-in-string
      "\\[\\([^]]+\\)\\](\\([^\\)]+\\))"
-     (format "[[%s/\\2][\\1]]" lab-host))))
+     (format "[[%s/\\2][\\1]]" (lab--current-host)))))
 
 ;;;; Merge request overview & diff shared functionality
 
