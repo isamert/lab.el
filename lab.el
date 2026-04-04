@@ -1002,7 +1002,9 @@ non-safe checks are used because the host and the ssh address of the
 host address may differ (see issue #5) but for some functions making
 this check makes sense without any significant loss of functionality."
   (let ((remote-url (lab-git-get-config "remote.origin.url")))
-    (when (or (not safe?) (and safe? (s-contains? (url-host (url-generic-parse-url lab-host)) remote-url)))
+    (when (or (not safe?)
+              (and safe? (s-contains? (url-host (url-generic-parse-url (lab--current-host)))
+                                      remote-url)))
       (if (s-prefix? "http" remote-url)
           (thread-last
             remote-url
@@ -1467,15 +1469,16 @@ recurring call, instead of a new watch request."
 ;;;###autoload
 (defun lab-watch-merge-request-last-pipeline (mr)
   "Start watching the latest pipeline of given MR."
-  ;; Pipeline may take some time to appear
-  (run-with-timer
-   lab-pipeline-watcher-initial-delay nil
-   (lambda ()
-     (let* ((lab-result-count 1)
-            (pipeline (car (lab-get-merge-request-pipelines
-                            (alist-get 'project_id mr)
-                            (alist-get 'iid mr)))))
-       (lab-watch-pipeline (alist-get 'web_url pipeline))))))
+  (let ((config (lab--config-for-url (alist-get 'web_url mr))))
+    (run-with-timer
+     lab-pipeline-watcher-initial-delay nil
+     (lambda ()
+       (let* ((lab--current-config config)
+              (lab-result-count 1)
+              (pipeline (car (lab-get-merge-request-pipelines
+                              (alist-get 'project_id mr)
+                              (alist-get 'iid mr)))))
+         (lab-watch-pipeline (alist-get 'web_url pipeline)))))))
 
 (defun lab-trigger-pipeline-manually (&optional project-id default-branch)
   "Trigger a pipeline.
