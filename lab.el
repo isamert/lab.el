@@ -1067,7 +1067,13 @@ this check makes sense without any significant loss of functionality."
   (plist-get (or config (lab--current-config)) :host))
 
 (defun lab--current-group (&optional config)
-  (plist-get (or config (lab--current-config)) :group))
+  (let ((config (or config (lab--current-config))))
+    ;; TODO: We can be smart about this and if there is no group for
+    ;; the current host then we can try the host and see if it has a
+    ;; group? Might be too much magic tho
+    (if-let* ((group (plist-get config :group)))
+        group
+      (user-error "lab :: `lab-group' is not defined for %s.  See `lab-group'" (plist-get config :host)))))
 
 (defun lab--current-token (&optional config)
   "Retrieve the GitLab API token to use."
