@@ -86,6 +86,10 @@ your =load-path=, afterwards you can simply do the following in your
 
 * Usage
 
+See ~M-x customize-group lab~ for all customization options.
+
+** Single host
+
 Set the following variables and you are good to go:
 
 #+begin_src elisp
@@ -111,7 +115,31 @@ auth-source backends support encryption.
 machine $lab-host password $lab-token
 #+end_src
 
-See ~M-x customize-group lab~ for all customization options.
+** Multiple hosts
+
+If you work with more than one GitLab instance, use ~lab-config~ instead:
+
+#+begin_src elisp
+(setq lab-config
+      '((:host "https://gitlab.com"
+         :token "YOUR-PRIVATE-GITLAB-API-TOKEN"
+         :group "my-group")
+        (:host "https://gitlab.mycompany.com"
+         :token "ANOTHER-TOKEN"
+         :group "my-team")))
+#+end_src
+
+~:token~ is optional in each entry — if omitted, it is looked up via
+auth-source using the ~:host~ value. ~:group~ is also optional (see
+~lab-group~ for details).
+
+When multiple hosts are configured, lab.el automatically determines
+which host to use based on:
+- The git remote of the current repository, or
+- The URL of the merge request/pipeline being acted on.
+
+If neither applies (e.g., listing MRs from a non-repo buffer), the
+first entry in ~lab-config~ is used.
 
 * Functionality summary
 
