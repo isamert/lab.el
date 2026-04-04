@@ -59,13 +59,23 @@
 
 (defcustom lab-token
   nil
-  "GitLab API token."
+  "GitLab API authentication token.
+
+If nil, the token is retrieved from `auth-sources' using `lab-host'
+as the lookup key.  Otherwise, this value is used directly as the
+authentication token.  See the README for more details.
+
+Also see `lab-config' for working with multiple GitLab instances.
+This variable need not be set if you intend to use multiple hosts."
   :type 'string
   :group 'lab)
 
 (defcustom lab-host
   "https://gitlab.com"
-  "GitLab host, like `https://gitlab.mycompany.com'."
+  "GitLab host, like `https://gitlab.mycompany.com'.
+
+Also see `lab-config' for working with multiple GitLab instances.
+This variable need not be set if you intend to use multiple hosts."
   :type 'string
   :group 'lab)
 
@@ -81,20 +91,28 @@ Each item is a plist in the form of:
 
 Example:
   (setq lab-config
-        '((:host \"https://gitlab.com\"
+        \\='((:host \"https://gitlab.com\"
            :token \"...\")
           (:host \"https://gitlab.mycompany.com\"
            :group \"mytribe\")))
 
 Also see `lab-host', `lab-token', `lab-group' if you are not interested
-in using multiple hosts."
+in using multiple hosts.
+
+If :token is not provided, the authentication token is looked up
+from `auth-sources' using the value of :host as the key.
+Otherwise, the given value is used directly as the token.
+See the README for more details."
   :type 'string
   :group 'lab)
 
 (defcustom lab-group
   nil
   "The GitLab group you mostly work on.
-Required only for functions containing `-group-' phrase."
+Required only for functions containing `-group-' phrase.
+
+Also see `lab-config' for working with multiple GitLab instances.
+This variable need not be set if you intend to use multiple hosts."
   :type 'string
   :group 'lab)
 
