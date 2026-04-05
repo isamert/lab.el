@@ -51,7 +51,7 @@
 (require 'auth-source)
 (require 'vtable)
 
-;; Customization:
+;;;; Customization:
 
 (defgroup lab nil
   "An interface for GitLab."
@@ -356,6 +356,18 @@ diff display."
 (defvar lab--current-config nil)
 
 (defvar lab--watched-pipelines (make-hash-table :test #'equal))
+
+;; Merge request related variables
+
+(defvar lab-merge-request-history nil)
+(defvar-local lab--merge-request-versions nil)
+(defvar-local lab--merge-request-threads nil)
+(defvar-local lab--merge-request nil)
+(defvar-local lab--merge-request-diffs nil)
+(defvar-local lab--pending-comment-count 0)
+(defvar-local lab--sent-comment-count 0)
+(defvar-local lab--current-user nil)
+(defvar-local lab--merge-request-url nil)
 
 ;;;; Public variables & utilities
 
@@ -1910,17 +1922,7 @@ MR is an object created by `lab--parse-merge-request-url'."
 
 ;;;; Code review stuff (merge requests)
 
-;;;;; Variables & lab-merge-request-diff-mode-map
-
-(defvar-local lab--merge-request-versions nil)
-(defvar-local lab--merge-request-threads nil)
-(defvar-local lab--merge-request-url nil)
-(defvar-local lab--merge-request nil)
-(defvar-local lab--merge-request-diffs nil)
-(defvar-local lab--pending-comment-count 0)
-(defvar-local lab--sent-comment-count 0)
-(defvar-local lab--current-user nil)
-(defvar lab-merge-request-history nil)
+;;;;; lab-merge-request-diff-mode-map
 
 (defvar lab-merge-request-diff-prefix-map
   (let ((map (make-sparse-keymap)))
