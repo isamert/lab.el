@@ -49,6 +49,7 @@
 (require 'async-await)
 (require 'promise)
 (require 'auth-source)
+(require 'vtable)
 
 ;; Customization:
 
@@ -353,6 +354,8 @@ diff display."
   "History for user inputs.")
 
 (defvar lab--current-config nil)
+
+(defvar lab--watched-pipelines (make-hash-table :test #'equal))
 
 ;;;; Public variables & utilities
 
@@ -1433,6 +1436,24 @@ If PROJECT is nil,current git project is used."
   (lab-job-select-and-act-on
    (lab-get-pipeline-jobs project-id pipeline-id)))
 
+(defun lab--parse-pipeline-url (url)
+  "Parse given URL into an alist containing pipeline info.
+The alist contains id, project_id, project, web_url and config of the
+pipeline."
+  (let* ((config (lab--config-for-url url))
+         (host (lab--current-host config))
+         (data (s-match (rx (literal host) (regexp "/\\(.*\\)/-/pipelines/\\([0-9]+\\)")) url))
+         (project (nth 1 data))
+         (project-hexified (url-hexify-string project))
+         (pipeline-id (nth 2 data)))
+    (when (or (not pipeline-id) (s-blank? pipeline-id))
+      (user-error "Pipeline id is nil for %s" url))
+    `((id . ,pipeline-id)
+      (project_id . ,project-hexified)
+      (project . ,project)
+      (web_url . ,url)
+      (config . ,config))))
+
 ;;;###autoload
 (defun lab-watch-pipeline (url &optional rerun?)
   "Start watching pipeline URL status.
@@ -1440,35 +1461,66 @@ Send a notification if it's finished, failed or waiting for a
 manual action.  RERUN? is used to indicate that this is a
 recurring call, instead of a new watch request."
   (interactive "sPipeline URL: ")
-  (let* ((config (lab--config-for-url url))
-         (host (lab--current-host config))
-         (data (s-match (rx (literal host) (regexp "/\\(.*\\)/-/pipelines/\\([0-9]+\\)")) url))
-         (project (nth 1 data))
-         (project-hexified (url-hexify-string project))
-         (pipeline (nth 2 data)))
-    (when (or (not pipeline) (s-blank? pipeline))
-      (user-error "Pipeline id is nil for %s" url))
-    (unless rerun?
-      (message ">> Started watching pipeline %s on %s!" pipeline project))
-    (run-with-timer
-     (if rerun? lab-pipeline-watcher-debounce-time 1)
-     nil
+  (let* ((pipeline (lab--parse-pipeline-url url))
+         (project-name (alist-get 'project pipeline)))
+    (let-alist pipeline
+      (unless rerun?
+        (puthash url pipeline lab--watched-pipelines)
+        (message ">> Started watching pipeline %s on %s!" .id .project))
+      (run-with-timer
+       (if rerun? lab-pipeline-watcher-debounce-time 1)
+       nil
+       (lambda ()
+         (when (gethash url lab--watched-pipelines)
+           (let* ((lab--current-config .config)
+                  (pipeline-info (lab--request (format "projects/%s/pipelines/%s" .project_id .id))) )
+             (let-alist pipeline-info
+               (pcase .status
+                 ("success"
+                  (lab--alert (format "Pipeline FINISHED: %s/%s" project-name .id)))
+                 ("failed"
+                  (lab--alert (format "Pipeline FAILED: %s/%s" project-name .id)))
+                 ((or "canceled" "skipped" "scheduled")
+                  (lab--alert (format "Pipeline %s: %s/%s" (s-upcase .status) project-name .id)))
+                 ("manual"
+                  (lab--alert (format "Pipeline requires MANUAL action: %s/%s" project-name .id))
+                  (when lab-should-open-pipeline-on-manual-action?
+                    (browse-url .web_url)))
+                 (_
+                  (lab-watch-pipeline url t)))
+               (puthash url `((project . ,project-name) ,@pipeline-info) lab--watched-pipelines)))))))))
+
+;;;###autoload
+(defun lab-list-watched-pipelines ()
+  "List all watched pipelines in a buffer."
+  (interactive)
+  (with-current-buffer (get-buffer-create "*lab-watched-pipelines*")
+    (erase-buffer)
+    (make-vtable
+     :columns '("Pipeline" "Status" "Last Update")
+     :sort-by '((2 . descend))
+     :objects-function
      (lambda ()
-       (let ((lab--current-config config))
-         (let-alist (lab--request (format "projects/%s/pipelines/%s" project-hexified pipeline))
-           (pcase .status
-             ("success"
-              (lab--alert (format "Pipeline FINISHED: %s/%s" project pipeline)))
-             ("failed"
-              (lab--alert (format "Pipeline FAILED: %s/%s" project pipeline)))
-             ((or "canceled" "skipped" "scheduled")
-              (lab--alert (format "Pipeline %s: %s/%s" (s-upcase .status) project pipeline)))
-             ("manual"
-              (lab--alert (format "Pipeline requires MANUAL action: %s/%s" project pipeline))
-              (when lab-should-open-pipeline-on-manual-action?
-                (browse-url .web_url)))
-             (_
-              (lab-watch-pipeline url t)))))))))
+       (seq-sort
+        (lambda (x y) (string> (or (alist-get 'updated_at x) "")
+                          (or (alist-get 'updated_at y) "")))
+        (map-values lab--watched-pipelines)))
+     :getter
+     (lambda (object column vtable)
+       (let* ((val (vtable-column vtable column)))
+         (let-alist object
+           (pcase val
+             ("Pipeline" (format "%s/%s" .project .id))
+             ("Status" (lab--fontify-status (or .status "unknown")))
+             ("Last Update" (or .updated_at ""))))))
+     :actions '("RET" (lambda (obj) (lab-pipeline-act-on obj))
+                "x" (lambda (obj)
+                      (let-alist obj
+                        (map-delete lab--watched-pipelines .web_url)
+                        (lab-list-watched-pipelines)))
+                "r" (lambda (_obj)
+                      (lab-list-watched-pipelines))))
+    (switch-to-buffer (current-buffer))))
 
 ;;;###autoload
 (defun lab-watch-pipeline-for-last-commit ()
