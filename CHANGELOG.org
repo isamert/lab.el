@@ -1,3 +1,11 @@
+* 3.7.0
+
+- Add ~lab-config~ for supporting multiple GitLab hosts/tokens.
+- Add tabulated view for currently watched pipelines (~M-x lab-list-watched-pipelines~).
+- Automatically select the sole item when there is only one candidate in selection prompts (thanks to @JaidynReiman).
+- Fix byte-compile warning related to MR variables.
+- Fix some potential host resolution errors.
+
 * 3.6.0
 
 - Added /Merge Request Overviews/, a similar view to "Overview" tab of the GitLab Merge Request view.
