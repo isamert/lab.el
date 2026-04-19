@@ -1028,6 +1028,59 @@ You can interrupt the process by calling \\[lab-interrupt]."
 
 ;;;; Core:
 
+(defun lab--extract-project-path (remote-url)
+  "Extract and hexify the project path from a git REMOTE-URL.
+
+>> (lab--extract-project-path \"https://gitlab.com/user/repo.git\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"https://gitlab.com/user/repo\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"https://gitlab.com/group/subgroup/repo.git\")
+=> \"group%2Fsubgroup%2Frepo\"
+
+>> (lab--extract-project-path \"http://gitlab.com/user/repo.git\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"https://user@gitlab.com:8443/user/repo.git\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"https://gitlab.com/user/repo.git/\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"git@github.com:user/repo.git\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"git@github.com:user/repo\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"git@github.com:group/subgroup/repo.git\")
+=> \"group%2Fsubgroup%2Frepo\"
+
+>> (lab--extract-project-path \"ssh://git@git.example.com:30022/xxx-developers/myxxx/repo.git\")
+=> \"xxx-developers%2Fmyxxx%2Frepo\"
+
+>> (lab--extract-project-path \"ssh://git@git.example.com/user/repo.git\")
+=> \"user%2Frepo\"
+
+>> (lab--extract-project-path \"git://github.com/user/repo.git\")
+=> \"user%2Frepo\""
+  (thread-last
+    (if (s-contains? "://" remote-url)
+        ;; with url scheme: http, https, ssh, git, file
+        (thread-last
+          remote-url
+          (url-generic-parse-url)
+          (url-filename)
+          (s-chop-prefix "/"))
+      ;; SCP notation: user@host:path
+      (cadr (s-split-up-to ":" remote-url 1)))
+    (s-chop-suffix "/")
+    (s-chop-suffix ".git")
+    (s-trim)
+    (url-hexify-string)))
+
 (defun lab--project-path (&optional safe?)
   "Return hexified project path for current git project.
 This is mostly used while doing an api call for the current
@@ -1042,22 +1095,7 @@ this check makes sense without any significant loss of functionality."
     (when (or (not safe?)
               (and safe? (s-contains? (url-host (url-generic-parse-url (lab--current-host)))
                                       remote-url)))
-      (if (s-prefix? "http" remote-url)
-          (thread-last
-            remote-url
-            (s-chop-suffix ".git")
-            (s-chop-prefix (lab--current-host))
-            (s-chop-prefix "/")
-            (s-chop-prefix "/")
-            (s-chop-prefix "/")
-            (s-trim)
-            (url-hexify-string))
-        (thread-last
-          (s-split-up-to ":" remote-url 1)
-          (cadr)
-          (s-chop-suffix ".git")
-          (s-trim)
-          (url-hexify-string))))))
+      (lab--extract-project-path remote-url))))
 
 (defun lab--current-config ()
   (cond
