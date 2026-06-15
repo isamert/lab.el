@@ -683,7 +683,7 @@ GitLab project and then if so, return it's project id, else, ask user to
 select a project first."
   (if current-prefix-arg
       (lab--read-project-id)
-    (if-let ((project-id (lab--project-path t)))
+    (if-let* ((project-id (lab--project-path t)))
         project-id
       (lab--read-project-id))))
 
@@ -952,7 +952,7 @@ in (also see `lab-projects-directory') and also asks for a GitLab
 group path to fetch all projects of (also see `lab-group').
 
 You can interrupt the process by calling \\[lab-interrupt]."
-  (if-let ((current (car repositories)))
+  (if-let* ((current (car repositories)))
       (let* ((path (lab--path-join root (alist-get 'path_with_namespace current)))
              (project-parent (f-dirname path)))
         (when lab--interrupt
@@ -1919,7 +1919,7 @@ If GROUP is omitted, `lab-group' is used."
      :state 'opened))))
 
 (defun lab--remove-diff-buffer ()
-  (when-let (buffer (get-buffer-window lab--diff-buffer-name))
+  (when-let* ((buffer (get-buffer-window lab--diff-buffer-name)))
     (quit-window t buffer)))
 
 (defun lab--find-main-branch ()
