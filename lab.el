@@ -50,6 +50,7 @@
 (require 'promise)
 (require 'auth-source)
 (require 'vtable)
+(require 'cl-seq)
 
 ;;;; Customization:
 
@@ -1301,6 +1302,11 @@ Example:
   "Get the currently authenticated user."
   (lab--request "user"))
 
+(defun lab-user-promise ()
+  "Promise version of `lab-user'."
+  (lab--request-promise "user"))
+
+
 ;;;; Projects:
 
 (lab--define-actions-for project
@@ -1835,6 +1841,71 @@ VARIABLES is an alist, like:
          "merge_requests"
          :scope 'assigned_to_me
          :state 'opened)))))
+
+(async-defun lab--participated-merge-requests ()
+  "Get recently participated merge requests.
+This fetches merge requests referenced by recent \"note\" and
+\"merge_request\" events by the current user along with merge requests
+that are assigned to you and the ones you've created."
+  (let* ((mr-events-p (lab--request-promise
+                       "events"
+                       :target_type "merge_request"))
+         (note-events-p (lab--request-promise
+                         "events"
+                         :target_type "note"))
+         (assigned-p (lab--request-promise
+                      "merge_requests"
+                      :scope 'assigned_to_me
+                      :state 'opened))
+         (username (alist-get 'username (await (lab-user-promise))))
+         (reviewing-p (lab--request-promise
+                       "merge_requests"
+                       :reviewer_username username
+                       :state 'opened))
+         (created-p (lab--request-promise
+                     "merge_requests"
+                     :scope 'created_by_me
+                     :state 'opened))
+         (events (append (await mr-events-p) (await note-events-p)))
+         (pairs
+          (seq-uniq
+           (seq-filter
+            #'cdr
+            (mapcar (lambda (event)
+                      (let-alist event
+                        (cond ((equal .target_type "MergeRequest")
+                               (cons .project_id .target_iid))
+                              ((equal .note.noteable_type "MergeRequest")
+                               (cons .note.project_id .note.noteable_iid)))))
+                    events))))
+         (grouped (seq-group-by #'car pairs))
+         (results (append
+                   (await
+                    (promise-all
+                     (mapcar
+                      (lambda (group)
+                        (let ((project-id (car group))
+                              (iids (mapcar #'cdr (cdr group))))
+                          (lab--request-promise
+                           (format "projects/%s/merge_requests" project-id)
+                           :%params (mapcar (lambda (iid) (cons "iids[]" iid)) iids))))
+                      grouped)))
+                   nil)))
+    (lab--sort-by-latest-updated
+     (cl-remove-duplicates
+      (append (await assigned-p) (await reviewing-p) (await created-p) (apply #'append results))
+      :key (lambda (mr) (alist-get 'id mr))
+      :from-end t))))
+
+;;;###autoload
+(defun lab-list-participated-merge-requests ()
+  "List merge requests you have recently participated in.
+These are effectively the most recent merge requests you either
+commented or approved."
+  (interactive)
+  (lab-merge-request-select-and-act-on
+   (promise-wait-value
+    (promise-wait lab--promise-timeout (lab--participated-merge-requests)))))
 
 (defun lab-list-group-merge-requests (&optional group)
   "List all open MRs that belongs to GROUP.
@@ -3573,10 +3644,13 @@ PARAMS is an plist where the keys are:
     ('ssh 'ssh_url_to_repo)
     ('https 'https_url_to_repo)))
 
-(defun lab--sort-by-latest-updated (lst)
+(defun lab--sort-by-field (field lst)
   (seq-sort
-   (lambda (o1 o2) (string> (alist-get 'updated_at o1) (alist-get 'updated_at o2)))
+   (lambda (o1 o2) (string> (alist-get field o1) (alist-get field o2)))
    lst))
+
+(defun lab--sort-by-latest-updated (lst)
+  (lab--sort-by-field 'updated_at lst))
 
 (defun lab--serialize-yaml-value (val)
   (pcase val
