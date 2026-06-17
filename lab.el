@@ -1391,6 +1391,58 @@ If PROJECT is nil, current git project is used."
   (lab--request
    (format "projects/%s/pipelines" (or project "#{project}"))))
 
+(defun lab--pipeline-merge-request-iid (pipeline)
+  "Return the merge request iid associated with PIPELINE, or nil.
+Pipelines triggered by a merge request have a `source' of
+\"merge_request_event\" and a `ref' like
+\"refs/merge-requests/<iid>/merge\"."
+  (let-alist pipeline
+    (when (equal .source "merge_request_event")
+      (nth 1 (s-match (rx "refs/merge-requests/" (group (+ digit))) .ref)))))
+
+(async-defun lab--pipelines-with-merge-request-titles (pipelines)
+  "Return PIPELINES, adding a `merge_request_title' field where applicable.
+For pipelines triggered by a merge request, the title is fetched and added
+under the `merge_request_title' key.  Merge requests are fetched in a single
+batched request per project, asynchronously.  Returns a promise that
+resolves to the enriched list."
+  (let* ((pairs (seq-uniq
+                 (seq-filter
+                  #'cdr
+                  (mapcar
+                   (lambda (pipeline)
+                     (cons (alist-get 'project_id pipeline)
+                           (lab--pipeline-merge-request-iid pipeline)))
+                   pipelines))))
+         (grouped (seq-group-by #'car pairs))
+         (merge-requests
+          (apply
+           #'append
+           (append
+            (await
+             (promise-all
+              (mapcar
+               (lambda (group)
+                 (let ((project-id (car group))
+                       (iids (mapcar #'cdr (cdr group))))
+                   (lab--request-promise
+                    (format "projects/%s/merge_requests" project-id)
+                    :%params (mapcar (lambda (iid) (cons "iids[]" iid)) iids))))
+               grouped)))
+            nil)))
+         (titles (make-hash-table :test #'equal)))
+    (dolist (mr merge-requests)
+      (let-alist mr
+        (puthash (format "%s!%s" .project_id .iid) .title titles)))
+    (mapcar
+     (lambda (pipeline)
+       (let-alist pipeline
+         (if-let* ((iid (lab--pipeline-merge-request-iid pipeline))
+                   (title (gethash (format "%s!%s" .project_id iid) titles)))
+             (cons (cons 'merge_request_title title) pipeline)
+           pipeline)))
+     pipelines)))
+
 ;;;###autoload
 (defun lab-list-project-pipelines (&optional project)
   "List latest pipelines belonging to PROJECT.
@@ -1398,8 +1450,11 @@ If PROJECT is nil,current git project is used."
   (interactive (list (lab--read-project-id-interactive-helper)))
   (lab--within-current-project
    (lab-pipeline-select-and-act-on
-    (lab--sort-by-latest-updated
-     (lab-get-project-pipelines project)))))
+    (let ((pipelines (lab--sort-by-latest-updated
+                      (lab-get-project-pipelines project))))
+      (promise-wait-value
+       (promise-wait lab--promise-timeout
+                     (lab--pipelines-with-merge-request-titles pipelines)))))))
 
 ;;;###autoload
 (defun lab-act-on-last-project-pipeline (&optional project)
@@ -1553,14 +1608,18 @@ recurring call, instead of a new watch request."
   (with-current-buffer (get-buffer-create "*lab-watched-pipelines*")
     (erase-buffer)
     (make-vtable
-     :columns '("Pipeline" "Status" "Last Update")
-     :sort-by '((2 . descend))
+     :columns '("Pipeline" "Status" "Trigger" "Last Update")
+     :sort-by '((3 . descend))
      :objects-function
      (lambda ()
-       (seq-sort
-        (lambda (x y) (string> (or (alist-get 'updated_at x) "")
-                          (or (alist-get 'updated_at y) "")))
-        (map-values lab--watched-pipelines)))
+       (let ((pipelines
+              (seq-sort
+               (lambda (x y) (string> (or (alist-get 'updated_at x) "")
+                                 (or (alist-get 'updated_at y) "")))
+               (map-values lab--watched-pipelines))))
+         (promise-wait-value
+          (promise-wait lab--promise-timeout
+                        (lab--pipelines-with-merge-request-titles pipelines)))))
      :getter
      (lambda (object column vtable)
        (let* ((val (vtable-column vtable column)))
@@ -1568,6 +1627,9 @@ recurring call, instead of a new watch request."
            (pcase val
              ("Pipeline" (format "%s/%s" .project .id))
              ("Status" (lab--fontify-status (or .status "unknown")))
+             ("Trigger" (or .merge_request_title
+                            (and .source .ref (format "%s: %s" .source .ref))
+                            ""))
              ("Last Update" (or .updated_at ""))))))
      :actions '("RET" (lambda (obj) (lab-pipeline-act-on obj))
                 "x" (lambda (obj)
@@ -3624,9 +3686,12 @@ PARAMS is an plist where the keys are:
 (defun lab--format-pipeline (it)
   (let-alist it
     (format
-     "%8s | %8s, %6s → %s (%s)%s"
+     "%8s | %8s, %6s → %s%s (%s)%s"
      (lab--fontify-status .status)
      .id .source .ref
+     (if .merge_request_title
+         (format " :: %s" (propertize .merge_request_title 'face 'bold))
+       "")
      (lab--time-ago (date-to-time .updated_at))
      (if .user (format " by %s" (alist-get 'username .user)) ""))))
 
