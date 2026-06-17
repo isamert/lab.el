@@ -1,3 +1,8 @@
+* 3.8.0
+
+- Show the associated merge request title in ~lab-list-project-pipelines~ for pipelines triggered by a merge request.
+- Show the merge request title (or trigger source and ref) in ~lab-list-watched-pipelines~ via a new "Trigger" column.
+
 * 3.7.0
 
 - Add ~lab-config~ for supporting multiple GitLab hosts/tokens.
