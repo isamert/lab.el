@@ -1,7 +1,10 @@
 * 3.8.0
 
-- Show the associated merge request title in ~lab-list-project-pipelines~ for pipelines triggered by a merge request.
-- Show the merge request title (or trigger source and ref) in ~lab-list-watched-pipelines~ via a new "Trigger" column.
+- Improve project path extraction, fixes #21.
+- Add ~lab-list-participated-merge-requests~. This command shows you the latest merge requests that you have participated in some way, such as approving them, commenting on them, or being assigned to them.
+- Show the associated merge request title in ~lab-list-project-pipelines~ for pipelines triggered by a merge request (thanks to @jasonatwell).
+- Show the merge request title (or trigger source and ref) in ~lab-list-watched-pipelines~ via a new "Trigger" column (thanks to @jasonatwell).
+- Fix some byte-compile warnings (~{if,when}-let~ → ~{if,when}-let*~).
 
 * 3.7.0
 
