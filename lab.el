@@ -817,6 +817,23 @@ This function simply checks for folders with `.git' under them."
   (s-trim (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
 
 ;;;###autoload
+(defun lab-git-branches ()
+  "Return local branch names for the current repository.
+Unlike `vc-git-branches', this also includes branches that are
+checked out in other worktrees: \"git branch\" prefixes those
+with \"+\", which `vc-git-branches' fails to parse and silently
+drops."
+  (ignore-errors
+    (process-lines "git" "branch" "--format=%(refname:short)")))
+
+;;;###autoload
+(defun lab-git-default-branch ()
+  "Return the default branch name of the origin remote, or nil."
+  (when-let* ((head (car (ignore-errors
+                           (process-lines "git" "rev-parse" "--abbrev-ref" "origin/HEAD")))))
+    (s-chop-prefix "origin/" head)))
+
+;;;###autoload
 (defun lab-git-last-commit-sha ()
   "Return last commits SHA for current project."
   (s-trim (shell-command-to-string "git rev-parse HEAD")))
@@ -1979,18 +1996,21 @@ If GROUP is omitted, `lab-group' is used."
 
 (defun lab--find-main-branch ()
   "Find the main branch for current repository.
-Main branch is one the branch names listed in `lab-main-branch-name'."
-  (let ((branches (vc-git-branches)))
-    (seq-find
-     (lambda (it) (member it branches))
-     (lab--listify lab-main-branch-name))))
+Prefer the branch \"origin/HEAD\" points to; when that is not
+configured locally, fall back to the first of the branch names
+listed in `lab-main-branch-name' that exists in the repository."
+  (or (lab-git-default-branch)
+      (let ((branches (lab-git-branches)))
+        (seq-find
+         (lambda (it) (member it branches))
+         (lab--listify lab-main-branch-name)))))
 
 (declare-function markdown-mode "markdown-mode")
 (defun lab-create-merge-request ()
   "Create an MR interactively for current git project."
   (interactive)
   (let* ((currbuf (current-buffer))
-         (branches (vc-git-branches))
+         (branches (lab-git-branches))
          (source-branch (completing-read
                          "Source branch: "
                          branches
