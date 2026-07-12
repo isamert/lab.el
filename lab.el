@@ -774,14 +774,8 @@ This is specifically designed for `lab-pull-bulk' and have no
 other uses."
   (condition-case reason
       (let* ((default-directory repository)
-             (branches (split-string (await (lab--git "branch" "--list")) "\n" t "[ \\*\t]+"))
-             (current-branch (await (lab--git "branch" "--show-current")))
-             ;; NOTE: I didn't use `lab--find-main-branch' here as I
-             ;; need an async way of getting it instead of blocking
-             (main-branch (seq-find
-                           (lambda (branch)
-                             (string-match (regexp-opt (lab--listify lab-main-branch-name) t) (or branch "NULL")))
-                           branches))
+             (current-branch (await (lab-git-current-branch-async)))
+             (main-branch (await (lab--find-main-branch-async)))
              (needs-checkout? (not (equal current-branch main-branch))))
         (await (lab--git "stash"))
         (when (and lab-pull-bulk-switch-to-main needs-checkout?)
@@ -815,15 +809,31 @@ This function simply checks for folders with `.git' under them."
   (s-trim (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
 
 ;;;###autoload
+(defun lab-git-current-branch-async ()
+  "Return current branch's name."
+  (lab--git "rev-parse" "--abbrev-ref" "HEAD"))
+
+;;;###autoload
 (defun lab-git-branches ()
   "Return local branch names for the current repository."
   (process-lines "git" "branch" "--format=%(refname:short)"))
+
+;;;###autoload
+(async-defun lab-git-branches-async ()
+  "Return local branch names for the current repository."
+  (s-split "\n" (await (lab--git "branch" "--format=%(refname:short)")) t))
 
 ;;;###autoload
 (defun lab-git-default-branch ()
   "Return the default branch name of the origin remote, or nil."
   (when-let* ((head (car (ignore-errors
                            (process-lines "git" "rev-parse" "--abbrev-ref" "origin/HEAD")))))
+    (s-chop-prefix "origin/" head)))
+
+;;;###autoload
+(async-defun lab-git-default-branch-async ()
+  "Return the default branch name of the origin remote, or nil."
+  (when-let* ((head (ignore-errors (await (lab--git "rev-parse" "--abbrev-ref" "origin/HEAD")))))
     (s-chop-prefix "origin/" head)))
 
 ;;;###autoload
@@ -1994,6 +2004,15 @@ configured locally, fall back to the first of the branch names
 listed in `lab-main-branch-name' that exists in the repository."
   (or (lab-git-default-branch)
       (let ((branches (lab-git-branches)))
+        (seq-find
+         (lambda (it) (member it branches))
+         (lab--listify lab-main-branch-name)))))
+
+(async-defun lab--find-main-branch-async ()
+  "Find the main branch for current repository.
+Async version of `lab--find-main-branch'."
+  (or (await (lab-git-default-branch-async))
+      (let ((branches (await (lab-git-branches-async))))
         (seq-find
          (lambda (it) (member it branches))
          (lab--listify lab-main-branch-name)))))
