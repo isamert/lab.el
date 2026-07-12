@@ -755,9 +755,7 @@ CMD."
   (promise-new
    (lambda (resolve reject)
      (let* ((pname (format "*lab-git-%s*" cmd))
-            (proc (start-process-shell-command
-                   pname nil
-                   (format "git --no-pager %s %s" cmd (string-join options " "))))
+            (proc (apply #'start-process pname nil "git" "--no-pager" cmd options))
             (output ""))
        (set-process-filter
         proc
