@@ -818,13 +818,8 @@ This function simply checks for folders with `.git' under them."
 
 ;;;###autoload
 (defun lab-git-branches ()
-  "Return local branch names for the current repository.
-Unlike `vc-git-branches', this also includes branches that are
-checked out in other worktrees: \"git branch\" prefixes those
-with \"+\", which `vc-git-branches' fails to parse and silently
-drops."
-  (ignore-errors
-    (process-lines "git" "branch" "--format=%(refname:short)")))
+  "Return local branch names for the current repository."
+  (process-lines "git" "branch" "--format=%(refname:short)"))
 
 ;;;###autoload
 (defun lab-git-default-branch ()
