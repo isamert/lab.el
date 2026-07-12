@@ -794,10 +794,7 @@ DIR is `lab-projects-directory' by default.
 This function simply checks for folders with `.git' under them."
   (thread-last
     (expand-file-name (or dir lab-projects-directory))
-    (format "fd . \"%s\" --type directory --maxdepth 6 --absolute-path")
-    (shell-command-to-string)
-    (string-trim)
-    (s-split "\n")
+    (funcall (lambda (d) (process-lines "fd" "." d "--type" "directory" "--maxdepth" "6" "--absolute-path")))
     (seq-filter #'lab-git-dir?)
     (seq-map #'expand-file-name)))
 
@@ -806,7 +803,7 @@ This function simply checks for folders with `.git' under them."
 ;;;###autoload
 (defun lab-git-current-branch ()
   "Return current branch's name."
-  (s-trim (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
+  (car (process-lines "git" "rev-parse" "--abbrev-ref" "HEAD")))
 
 ;;;###autoload
 (defun lab-git-current-branch-async ()
@@ -839,7 +836,7 @@ This function simply checks for folders with `.git' under them."
 ;;;###autoload
 (defun lab-git-last-commit-sha ()
   "Return last commits SHA for current project."
-  (s-trim (shell-command-to-string "git rev-parse HEAD")))
+  (car (process-lines "git" "rev-parse" "HEAD")))
 
 ;;;###autoload
 (defun lab-git-get-config (conf)
@@ -899,9 +896,11 @@ Also see `lab-after-git-clone-functions'."
     (read-directory-name "Directory to clone in: " lab-projects-directory)))
   (make-directory dir t)
   (let* ((default-directory dir)
-         (proc (start-process-shell-command
-                "*lab-clone*" lab--git-clone-buffer-name
-                (format "git clone --quiet %s \"%s\"" (if shallow "--depth=1" "") url))))
+         (proc (let ((args (append '("git" "clone" "--quiet")
+                                   (when shallow '("--depth=1"))
+                                   (list url))))
+                 (apply #'start-process
+                        "*lab-clone*" lab--git-clone-buffer-name args))))
     (with-current-buffer lab--git-clone-buffer-name
       (goto-char (point-max))
       (insert (format ">> Cloning %s to %s...\n" url dir)))
@@ -2028,7 +2027,7 @@ Async version of `lab--find-main-branch'."
                          nil nil
                          (lab--find-main-branch)))
          (title (read-string "MR Title: "
-                             (s-trim (shell-command-to-string "git log -1 --pretty=%B")))))
+                             (car (process-lines "git" "log" "-1" "--pretty=%B")))))
     (lab--user-input
      :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
      :init (thread-last
