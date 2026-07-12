@@ -1207,11 +1207,6 @@ Example:
             (if (s-prefix? "http" endpoint)
                 endpoint
               (format "%s/api/v4/%s" (lab--current-host %config) endpoint))
-            ;; The replacement functions must preserve match data:
-            ;; `replace-regexp-in-string' splices their return value using
-            ;; the match data from ITS regexp, and `lab--project-path' runs
-            ;; regexps of its own (e.g. `url-generic-parse-url' for http(s)
-            ;; remotes), which otherwise corrupts the endpoint.
             (s-replace-regexp "#{group}" (lambda (&rest _)
                                            (save-match-data
                                              (url-hexify-string (lab--current-group %config)))))
