@@ -815,7 +815,7 @@ This function simply checks for folders with `.git' under them."
   "Return local branch names for the current repository."
   (process-lines "git" "branch" "--format=%(refname:short)"))
 
-;;;###autoload
+;;;###autoload (autoload 'lab-git-branches-async "lab")
 (async-defun lab-git-branches-async ()
   "Return local branch names for the current repository."
   (s-split "\n" (await (lab--git "branch" "--format=%(refname:short)")) t))
@@ -827,7 +827,7 @@ This function simply checks for folders with `.git' under them."
                            (process-lines "git" "rev-parse" "--abbrev-ref" "origin/HEAD")))))
     (s-chop-prefix "origin/" head)))
 
-;;;###autoload
+;;;###autoload (autoload 'lab-git-default-branch-async "lab")
 (async-defun lab-git-default-branch-async ()
   "Return the default branch name of the origin remote, or nil."
   (when-let* ((head (ignore-errors (await (lab--git "rev-parse" "--abbrev-ref" "origin/HEAD")))))
@@ -1458,7 +1458,7 @@ resolves to the enriched list."
            pipeline)))
      pipelines)))
 
-;;;###autoload
+;;;###autoload (autoload 'lab-list-project-pipelines "lab" nil t)
 (async-defun lab-list-project-pipelines (&optional project)
   "List latest pipelines belonging to PROJECT.
 If PROJECT is nil,current git project is used."
@@ -1614,7 +1614,7 @@ recurring call, instead of a new watch request."
                   (lab-watch-pipeline url t)))
                (puthash url `((project . ,project-name) ,@pipeline-info) lab--watched-pipelines)))))))))
 
-;;;###autoload
+;;;###autoload (autoload 'lab-list-watched-pipelines "lab" nil t)
 (async-defun lab-list-watched-pipelines ()
   "List all watched pipelines in a buffer."
   (interactive)
