@@ -1,3 +1,11 @@
+* 3.9.0
+
+- Fix branch candidates to include branches under worktrees (thanks @jasonatwell!).
+- Fix couple bugs related to request building (thanks @jasonatwell!).
+- Replace `shell-command-to-string` calls with `start-process` calls to get rid of shell overhead.
+- Add couple of async variations of some git commands to keep things smooth and non blocking.
+- Fix async commands not getting autoloaded properly (thanks @rassie!).
+
 * 3.8.0
 
 - Improve project path extraction, fixes #21.
