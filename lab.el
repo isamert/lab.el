@@ -1482,13 +1482,22 @@ If PROJECT is nil,current git project is used."
 
 ;;;###autoload
 (defun lab-get-pipeline-jobs (project-id pipeline-id)
-  "Get latest jobs for PIPELINE-ID in PROJECT-ID."
-  (lab--request
-   (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)))
+  "Get latest jobs for PIPELINE-ID in PROJECT-ID.
+
+This includes trigger jobs (aka bridges), such as manual deployment jobs that
+use a `trigger:' definition. GitLab exposes those through a separate endpoint
+from regular jobs."
+  (append
+   (lab--request
+    (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)
+    :%collect-all? t)
+   (lab--request
+    (format "projects/%s/pipelines/%s/bridges" project-id pipeline-id)
+    :%collect-all? t)))
 
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
-  "List latest jobs for PIPELINE-ID in PROJECT-ID."
+  "List latest jobs for PIPELINE-ID in PROJECT-ID, including trigger jobs."
   (lab-job-select-and-act-on
    (lab-get-pipeline-jobs project-id pipeline-id)))
 
