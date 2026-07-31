@@ -193,7 +193,7 @@ accessed through other listing functions.
     buffer (~lab-act-on-last-failed-pipeline-job~).
   - Act on jobs:
     - Open them in browser.
-    - Trigger retries, cancellation or deletion.
+    - Run manual jobs; trigger retries, cancellation or deletion.
     - Show logs of a job on a nicely formatted buffer.
     - Show detailed information about given job.
 - TODOs ::

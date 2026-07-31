@@ -1789,6 +1789,10 @@ VARIABLES is an alist, like:
        (lab--request
         (format "projects/%s/jobs/%s/retry" (lab--projid-for-job it) .id)
         :%type "POST"))
+   (?R "Run"
+       (lab--request
+        (format "projects/%s/jobs/%s/play" (lab--projid-for-job it) .id)
+        :%type "POST"))
    (?c "Cancel"
        (lab--request
         (format "projects/%s/jobs/%s/cancel" (lab--projid-for-job it) .id)
