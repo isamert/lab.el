@@ -1487,13 +1487,14 @@ If PROJECT is nil,current git project is used."
 This includes trigger jobs (aka bridges), such as manual deployment jobs that
 use a `trigger:' definition. GitLab exposes those through a separate endpoint
 from regular jobs."
-  (append
-   (lab--request
-    (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)
-    :%collect-all? t)
-   (lab--request
-    (format "projects/%s/pipelines/%s/bridges" project-id pipeline-id)
-    :%collect-all? t)))
+  (lab--sort-by-latest-updated
+   (append
+    (lab--request
+     (format "projects/%s/pipelines/%s/jobs" project-id pipeline-id)
+     :%collect-all? t)
+    (lab--request
+     (format "projects/%s/pipelines/%s/bridges" project-id pipeline-id)
+     :%collect-all? t))))
 
 ;;;###autoload
 (defun lab-list-pipeline-jobs (project-id pipeline-id)
