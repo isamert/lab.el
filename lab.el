@@ -59,6 +59,27 @@
   :group 'tools
   :prefix "lab-")
 
+(declare-function markdown-mode "markdown-mode")
+(declare-function markdown-ts-mode "markdown-ts-mode")
+
+(defcustom lab-input-mode
+  (cond
+   ((>= emacs-major-version 31) #'markdown-ts-mode)
+   ((require 'markdown-mode nil t) #'markdown-mode)
+   (t #'text-mode))
+  "Major mode used for Markdown text entered through Lab prompts and
+shown in merge-request overview source blocks.
+
+By default, use `markdown-ts-mode' in Emacs 31 and later.  On earlier
+Emacs versions, use `markdown-mode' when available and `text-mode'
+otherwise."
+  :type 'function
+  :group 'lab)
+
+(defun lab--input-mode-src-block-language ()
+  "Return the Org source-block language for `lab-input-mode'."
+  (string-remove-suffix "-mode" (symbol-name lab-input-mode)))
+
 (defcustom lab-token
   nil
   "GitLab API authentication token.
@@ -2025,7 +2046,6 @@ Async version of `lab--find-main-branch'."
          (lambda (it) (member it branches))
          (lab--listify lab-main-branch-name)))))
 
-(declare-function markdown-mode "markdown-mode")
 (defun lab-create-merge-request ()
   "Create an MR interactively for current git project."
   (interactive)
@@ -2043,7 +2063,7 @@ Async version of `lab--find-main-branch'."
          (title (read-string "MR Title: "
                              (car (process-lines "git" "log" "-1" "--pretty=%B")))))
     (lab--user-input
-     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :mode lab-input-mode
      :init (thread-last
              (append
               lab-default-merge-request-create-options
@@ -2413,7 +2433,7 @@ ON-ACCEPT should return the created overlay."
                 (pos-eol)))
          (buffer (current-buffer)))
     (lab--user-input
-     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :mode lab-input-mode
      :parser #'buffer-string
      :init init
      :on-reject
@@ -3213,7 +3233,8 @@ and includes author information and timestamps."
                             ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
                             ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
                             ":END:" "\n")
-                    (insert "#+begin_src markdown\n" .body "\n#+end_src\n\n")))
+                    (insert "#+begin_src " (lab--input-mode-src-block-language)
+                            "\n" .body "\n#+end_src\n\n")))
               (insert "*"
                       (pcase (list (alist-get 'resolvable first-note)
                                    (alist-get 'resolved first-note))
@@ -3253,7 +3274,8 @@ and includes author information and timestamps."
                            ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
                            ":TYPE: note\n"
                            ":END:" "\n")
-                   (insert "#+begin_src markdown"  "\n" .body "\n" "#+end_src" "\n\n")))
+                   (insert "#+begin_src " (lab--input-mode-src-block-language)
+                           "\n" .body "\n" "#+end_src" "\n\n")))
                (alist-get 'notes thread)))))
         (org-fold-hide-drawer-all)
         (org-fold-hide-sublevels 1)
@@ -3271,7 +3293,7 @@ and includes author information and timestamps."
   (let ((buf (current-buffer))
         (url lab--merge-request-url))
     (lab--user-input
-     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :mode lab-input-mode
      :buffer-name "*lab-merge-request-comment*"
      :on-accept
      (lambda (input)
@@ -3321,7 +3343,7 @@ nil, fail if we are not on a note."
                         (org-back-to-heading nil)
                         (ignore-errors (org-next-block 1))
                         (when (re-search-forward
-                               "^#\\+begin_src markdown"
+                               "^#\\+begin_src\\(?:\\s-\\|$\\)"
                                (save-excursion (org-end-of-subtree t) (point)) t)
                           (and-let* ((info (org-babel-get-src-block-info)))
                             (nth 1 info)))))))
@@ -3376,7 +3398,7 @@ nil, fail if we are not on a note."
   (let ((thread-id (lab--overview-thread-id 'fail))
         (buf (current-buffer)))
     (lab--user-input
-     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :mode lab-input-mode
      :buffer-name "*lab-reply*"
      :on-accept
      (lambda (input)
@@ -3402,7 +3424,8 @@ nil, fail if we are not on a note."
                         ":UPDATED_AT: " (lab--format-gitlab-datetime (alist-get 'updated_at note)) "\n"
                         ":TYPE: note\n"
                         ":END:" "\n")
-                (insert "#+begin_src markdown\n" (alist-get 'body note) "\n#+end_src\n")))
+                (insert "#+begin_src " (lab--input-mode-src-block-language)
+                        "\n" (alist-get 'body note) "\n#+end_src\n")))
             (message "lab :: Adding note...Done"))
           :%error
           (lambda (err _)
