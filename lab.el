@@ -3198,15 +3198,22 @@ and includes author information and timestamps."
                  (first-note (car (alist-get 'notes thread))))
             (if invidual?
                 (let-alist first-note
-                  (pcase-let* ((`(,first-line ,rest)
-                                (s-split-up-to "\n" (lab--convert-md-to-org .body) 1)))
-                    (insert "* " (lab--format-gitlab-author-org .author) ": " first-line "\n")
+                  (if .system
+                      (pcase-let* ((`(,first-line ,rest)
+                                    (s-split-up-to "\n" (lab--convert-md-to-org .body) 1)))
+                        (insert "* " (lab--format-gitlab-author-org .author) ": " first-line "\n")
+                        (insert ":PROPERTIES:" "\n"
+                                ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
+                                ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
+                                ":END:" "\n"
+                                (or rest "")
+                                "\n"))
+                    (insert "* " (lab--format-gitlab-author-org .author) " commented\n")
                     (insert ":PROPERTIES:" "\n"
                             ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
                             ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
-                            ":END:" "\n"
-                            (or rest "")
-                            "\n")))
+                            ":END:" "\n")
+                    (insert "#+begin_src markdown\n" .body "\n#+end_src\n\n")))
               (insert "*"
                       (pcase (list (alist-get 'resolvable first-note)
                                    (alist-get 'resolved first-note))
