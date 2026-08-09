@@ -3180,16 +3180,18 @@ and includes author information and timestamps."
           (insert (format "#+TITLE: GitLab: %s (%s)\n\n" (lab--pretty-mr-name mr) .title))
           (insert (format "[[%s][Open at web]] | " url))
           (insert (format "[[elisp:(lab-open-merge-request-diff \"%s\")][Diff & review]] | " url))
+          (insert "[[elisp:(lab-add-merge-request-comment)][Add comment]] | ")
           (insert (format "[[elisp:(lab-open-merge-request-overview \"%s\")][Refresh]]" url))
           (insert "\n\n-----\n\n")
           (insert (format "- MR :: %s → %s, by %s\n" .source_branch .target_branch (lab--format-gitlab-author-org .author)))
           (when .head_pipeline
             (insert "- Last pipeline :: " (s-trim (lab--format-pipeline .head_pipeline))))
           (insert "\n\n")
-          (insert ":DESCRIPTION:\n"
-                  (s-trim (lab--convert-md-to-org .description))
-                  "\n:END:"
-                  "\n\n"))
+          (when (and .description (not (s-blank? .description)))
+            (insert ":DESCRIPTION:\n"
+                    (s-trim (lab--convert-md-to-org .description))
+                    "\n:END:"
+                    "\n\n")))
         (dolist (thread mr-threads)
           (let* ((invidual? (alist-get 'individual_note thread))
                  (first-note (car (alist-get 'notes thread))))
