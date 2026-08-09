@@ -3141,7 +3141,7 @@ notes and diff notes, formatting the diffs as `org-mode' source blocks.
 Marks resolvable threads as TODO or DONE based on their resolved status,
 and includes author information and timestamps."
   (interactive (list (or lab--merge-request-url
-               (read-string "MR: " nil 'lab-merge-request-history))))
+                         (read-string "MR: " nil 'lab-merge-request-history))))
   (let ((mr (lab--parse-merge-request-url url)))
     (with-current-buffer (get-buffer-create (format "*lab-mr-overview: %s*" (lab--pretty-mr-name mr)))
       (erase-buffer)
