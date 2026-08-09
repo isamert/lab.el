@@ -1,3 +1,12 @@
+* 3.10.0
+
+- Merge request overview improvements:
+  - Hide empty description block, when no description is available
+  - Ability to post top level comments to merge requests and reply them (see #29)
+  - Show user messages properly, in a markdown code block
+- Add `lab-input-mode` to control which mode to use while entering markdown input. Earlier this was simply trying to use ~markdown-mode~ and was falling back to ~prog-mode~. Now it's customizable and the default is ~markdown-ts-mode~ → ~markdown-mode~, ~text-mode~ (whichever is available first).
+- Trigger jobs are now included in list of jobs (thanks @jasonatwell!)
+
 * 3.9.0
 
 - Fix branch candidates to include branches under worktrees (thanks @jasonatwell!).
