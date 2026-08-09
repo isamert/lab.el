@@ -3228,8 +3228,11 @@ and includes author information and timestamps."
                                 ":END:" "\n"
                                 (or rest "")
                                 "\n"))
-                    (insert "* " (lab--format-gitlab-author-org .author) " commented\n")
+                    (insert "* " (lab--format-gitlab-author-org .author)
+                            " commented [[elisp:(lab-reply-thread)][Reply]]\n")
                     (insert ":PROPERTIES:" "\n"
+                            ":ID: " (alist-get 'id thread) "\n"
+                            ":TYPE: thread\n"
                             ":CREATED_AT: " (lab--format-gitlab-datetime .created_at) "\n"
                             ":UPDATED_AT: " (lab--format-gitlab-datetime .updated_at) "\n"
                             ":END:" "\n")
