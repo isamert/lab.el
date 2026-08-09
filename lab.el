@@ -3108,6 +3108,7 @@ request diff interface."
     (define-key map (kbd "a") #'lab-approve-merge-request)
     (define-key map (kbd "u") #'lab-unapprove-merge-request)
 
+    (define-key map (kbd "n") #'lab-add-merge-request-comment)
     (define-key map (kbd "r") #'lab-reply-thread)
     (define-key map (kbd "e") #'lab-edit-thread)
     (define-key map (kbd "x") #'lab-delete-thread)
@@ -3256,6 +3257,33 @@ and includes author information and timestamps."
          #'lab--handle-overview-org-state-change
          nil t)
         (switch-to-buffer (current-buffer))))))
+
+(defun lab-add-merge-request-comment ()
+  "Add a top-level comment to the merge request in the current overview buffer."
+  (interactive nil lab-merge-request-overview-mode)
+  (let ((buf (current-buffer))
+        (url lab--merge-request-url))
+    (lab--user-input
+     :mode (if (require 'markdown-mode nil t) #'markdown-mode #'prog-mode)
+     :buffer-name "*lab-merge-request-comment*"
+     :on-accept
+     (lambda (input)
+       (with-current-buffer buf
+         (let-alist lab--merge-request
+           (message "lab :: Adding comment...")
+           (lab--request
+            (format "projects/%s/merge_requests/%s/notes" .project_id .iid)
+            :%type "POST"
+            :%headers '(("Content-Type" . "application/json"))
+            :%data (json-encode `((body . ,input)))
+            :%success
+            (lambda (_comment)
+              (with-current-buffer buf
+                (lab-open-merge-request-overview url))
+              (message "lab :: Adding comment...Done"))
+            :%error
+            (lambda (err _)
+              (message "lab :: Failed to add comment: %s" err)))))))))
 
 (declare-function org-element-at-point "org-element")
 (declare-function org-element-property "org-element")
