@@ -408,6 +408,7 @@ diff display."
 
     (define-key map "mc" #'lab-create-merge-request)
     (define-key map "mm" #'lab-list-my-merge-requests)
+    (define-key map "mr" #'lab-list-review-merge-requests)
     (define-key map "mg" #'lab-list-group-merge-requests)
     (define-key map "mb" #'lab-list-branch-merge-requests)
     (define-key map "mp" #'lab-list-project-merge-requests)
@@ -1945,6 +1946,17 @@ VARIABLES is an alist, like:
          "merge_requests"
          :scope 'assigned_to_me
          :state 'opened)))))
+
+;;;###autoload
+(defun lab-list-review-merge-requests ()
+  "List open merge requests where you are assigned as a reviewer."
+  (interactive)
+  (lab-merge-request-select-and-act-on
+   (lab--sort-by-latest-updated
+    (lab--request
+     "merge_requests"
+     :scope 'reviews_for_me
+     :state 'opened))))
 
 (async-defun lab--participated-merge-requests ()
   "Get recently participated merge requests.
@@ -3655,12 +3667,13 @@ PARAMS is an plist where the keys are:
   \"author.username\").
 
 - :TYPE is the type of the request, possible values are `mine',
-  `group', `project'.  `mine' fetches the merge requests that is
-  either created by you or assigned to you.  `group' fetches the
-  merge requests that are opened under your GitLab group.  By
-  default `lab-group' is used as your group, or you can also
-  supply :GROUP parameter to override it.  `project' fetches
-  merge requests that belongs to current project or you can use
+  `review', `group', `project'.  `review' fetches merge requests where
+  you are assigned as a reviewer.  `mine' fetches the merge requests
+  that is either created by you or assigned to you.  `group' fetches the
+  merge requests that are opened under your GitLab group.  By default
+  `lab-group' is used as your group, or you can also supply :GROUP
+  parameter to override it.  `project' fetches merge requests that
+  belongs to current project or you can use
   :PROJECT to override it.  It should be either GitLab project id
   or project path like \"a-group-name/project\".
 
@@ -3669,6 +3682,7 @@ PARAMS is an plist where the keys are:
 
 - :SCOPE is the scope of the merge requests.  Please see GitLab
   API documentation for more information.  The default is `all'.
+  This parameter only applies to `group' and `project' types.
 
 - :LIMIT is the maximum count of results.  By default it's
   `lab-result-count'.  The maximum is
@@ -3676,7 +3690,7 @@ PARAMS is an plist where the keys are:
 
 - For :GROUP and :PROJECT, see the explanation for :TYPE."
   (let* ((headers (or (plist-get params :headers) '("state" "title" "author.username")))
-         ;; Possible types: mine, group, project
+         ;; Possible types: mine, review, group, project
          (type (or (plist-get params :type) 'mine))
          ;; Possible states :: opened, closed, locked, merged, all
          (state (or (plist-get params :state) 'opened))
@@ -3696,6 +3710,11 @@ PARAMS is an plist where the keys are:
                          "merge_requests"
                          :scope 'assigned_to_me
                          :state state))))
+            ('review (lab--sort-by-latest-updated
+                      (lab--request
+                       "merge_requests"
+                       :scope 'reviews_for_me
+                       :state state)))
             ('group (lab--sort-by-latest-updated
                      (lab--request
                       (format "groups/%s/merge_requests" group)

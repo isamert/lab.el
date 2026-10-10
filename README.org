@@ -165,8 +165,8 @@ accessed through other listing functions.
     ~lab-merge-request-overview~.
   - List merge requests belonging to a group, a branch, a project or
     all merge requests that you created or assigned to
-    (~lab-list-{my,group,branch,project}-merge-requests~), and act on
-    these merge requests:
+    (~lab-list-{my,review,group,branch,project}-merge-requests~), and
+    act on these merge requests:
     - Open them in browser.
     - Mark them as ready or as draft.
     - Rebase remote branch against the target.
@@ -231,6 +231,7 @@ merge request link or use any of the following functions to find a
 merge request:
 
 - ~lab-list-my-merge-requests~
+- ~lab-list-review-merge-requests~
 - ~lab-list-group-merge-requests~
 - ~lab-list-branch-merge-requests~
 - ~lab-list-project-merge-requests~
@@ -345,6 +346,7 @@ merge request link or use any of the following functions to find a
 merge request:
 
 - ~lab-list-my-merge-requests~
+- ~lab-list-review-merge-requests~
 - ~lab-list-group-merge-requests~
 - ~lab-list-branch-merge-requests~
 - ~lab-list-project-merge-requests~
