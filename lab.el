@@ -3694,7 +3694,6 @@ PARAMS is an plist where the keys are:
          (type (or (plist-get params :type) 'mine))
          ;; Possible states :: opened, closed, locked, merged, all
          (state (or (plist-get params :state) 'opened))
-         (group (url-hexify-string (or (plist-get params :group) (lab--current-group))))
          (scope (or (plist-get params :scope) 'all))
          ;; TODO (or ... current-project?)
          (project (or (plist-get params :project)))
@@ -3715,11 +3714,13 @@ PARAMS is an plist where the keys are:
                        "merge_requests"
                        :scope 'reviews_for_me
                        :state state)))
-            ('group (lab--sort-by-latest-updated
-                     (lab--request
-                      (format "groups/%s/merge_requests" group)
-                      :scope scope
-                      :state state)))
+            ('group (let ((group (url-hexify-string
+                                 (or (plist-get params :group) (lab--current-group)))))
+                      (lab--sort-by-latest-updated
+                       (lab--request
+                        (format "groups/%s/merge_requests" group)
+                        :scope scope
+                        :state state))))
             ;; TODO: Maybe also add branch? :source_branch (or branch (lab-git-current-branch))
             ('project (lab--request
                        (format "projects/%s/merge_requests" (or project "#{project}"))
